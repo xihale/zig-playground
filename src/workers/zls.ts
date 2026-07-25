@@ -1,0 +1,88 @@
+import { WASI, PreopenDirectory, Fd, ConsoleStdout } from "@bjorn3/browser_wasi_shim";
+import { getLatestZigArchive } from "../utils";
+
+class Stdio extends Fd {
+    constructor() {
+        super();
+    }
+
+    fd_write(slice: Uint8Array): { ret: number; nwritten: number } {
+        throw new Error("Cannot write");
+    }
+
+    fd_read(size: number): { ret: number; data: Uint8Array; } {
+        throw new Error("Cannot read");
+    }
+}
+
+let instance: WebAssembly.Instance;
+let bufferedMessages: string[] = [];
+
+type ZigPtr = number;
+
+interface ZLSWasmExports {
+    memory: WebAssembly.Memory,
+
+    createServer(): void,
+    allocMessage(len: number): ZigPtr,
+    call(): void,
+    outputMessageCount(): number,
+    outputMessagePtr(index: number): ZigPtr,
+    outputMessageLen(index: number): number,
+}
+
+function sendMessage(message: string) {
+    const inputMessageBuffer = new TextEncoder().encode(message);
+    const exports = instance.exports as unknown as ZLSWasmExports;
+    const ptr = exports.allocMessage(inputMessageBuffer.length);
+    new Uint8Array(exports.memory.buffer).set(inputMessageBuffer, ptr);
+    exports.call();
+
+    const outputMessageCount = exports.outputMessageCount();
+    for (let i = 0; i < outputMessageCount; i++) {
+        const start = exports.outputMessagePtr(i);
+        const end = start + exports.outputMessageLen(i);
+        const outputMessageBuffer = new Uint8Array(exports.memory.buffer).slice(start, end);
+        postMessage(new TextDecoder().decode(outputMessageBuffer));
+    }
+}
+
+onmessage = (event) => {
+    if (instance) {
+        sendMessage(event.data);
+    } else {
+        bufferedMessages.push(event.data);
+    }
+};
+
+(async () => {
+    const libDirectory = await getLatestZigArchive();
+
+    const args = ["zls.wasm"];
+    const env: string[] = [];
+    const fds = [
+        new Stdio(), // stdin
+        new Stdio(), // stdout
+        ConsoleStdout.lineBuffered((line) => postMessage(JSON.stringify({ stderr: line }))), // stderr
+        new PreopenDirectory(".", new Map([])),
+        new PreopenDirectory("/lib", libDirectory.contents),
+        new PreopenDirectory("/cache", new Map()),
+    ];
+    const wasi = new WASI(args, env, fds, { debug: false });
+
+    const { instance: localInstance } = await WebAssembly.instantiateStreaming(fetch(new URL("../../zig-out/bin/zls.wasm", import.meta.url)), {
+        "wasi_snapshot_preview1": wasi.wasiImport,
+    });
+
+    // @ts-ignore
+    wasi.inst = localInstance;
+
+    // @ts-ignore
+    localInstance.exports.createServer();
+
+    instance = localInstance;
+
+    for (const bufferedMessage of bufferedMessages) {
+        sendMessage(bufferedMessage);
+    }
+})();

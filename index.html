@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zig Playground</title>
+    <link rel="stylesheet" href="style/style.css">
+</head>
+<body>
+    <main>
+        <div id="split-pane">
+            <section id="editor-pane">
+                <div class="pane-toolbar">
+                    <div class="pane-toolbar-left">
+                        <select id="example-select" aria-label="Examples"></select>
+                    </div>
+                    <div class="pane-toolbar-actions">
+                        <button type="button" id="reset" title="Reset (Ctrl+R)">Reset</button>
+                        <button type="button" id="run">Run</button>
+                    </div>
+                </div>
+                <div id="editor"></div>
+            </section>
+
+            <div id="resize-bar" aria-label="Resize panes" role="separator"></div>
+
+            <section id="preview-pane">
+                <div class="pane-toolbar">
+                    <div class="pane-toolbar-left">Output</div>
+                    <div id="run-status" class="idle" title="status">
+                        <span class="status-spinner" aria-hidden="true"></span>
+                        <span id="status-text">idle</span>
+                    </div>
+                </div>
+                <div id="output-container"></div>
+            </section>
+        </div>
+    </main>
+
+    <script src="/src/editor.ts" type="module"></script>
+</body>
+</html>

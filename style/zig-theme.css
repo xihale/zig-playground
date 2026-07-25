@@ -1,0 +1,93 @@
+/* ─── Token colors (vitesse-dark, on xAI near-black canvas) ──────
+   Class names are NOT free to change: ZLS semantic tokens in lsp.ts
+   emit `st-${SemanticTokenType}` (namespace/type/class/enum/interface/
+   struct/typeParameter/parameter/variable/property/enumMember/event/
+   function/method/macro/keyword/modifier/comment/string/number/regexp/
+   operator/decorator). The lezer fallback in theme.ts reuses the same
+   classes. Colors below cover all 23 ZLS types so nothing renders in
+   the base text color by accident.
+
+   Dark-only per DESIGN.md: the editor shares the page canvas
+   (#0a0a0a). The vitesse-dark palette was designed for dark surfaces
+   so contrast holds; keyword/string/type read slightly more vivid on
+   pure black than on #1e1e1e, matching the "white-on-near-black"
+   restraint of the chrome. */
+
+:root {
+  --code-background-color: #0a0a0a;
+  --code-text-color: #dadbdf;
+
+  /* keywords / literals */
+  .st-keyword,
+  .st-keywordLiteral,
+  .st-modifier {
+    color: #4d9375;
+  }
+  /* comments */
+  .st-comment {
+    color: #758575dd;
+    font-style: italic;
+  }
+  /* strings / escapes / regexps */
+  .st-string,
+  .st-escapeSequence,
+  .st-regexp {
+    color: #c98a7d;
+  }
+  /* numbers */
+  .st-number {
+    color: #4c9a91;
+  }
+  /* types (namespace/type/class/enum/interface/struct/typeParameter) */
+  .st-type,
+  .st-typeParameter,
+  .st-class,
+  .st-enum,
+  .st-interface,
+  .st-struct,
+  .st-namespace {
+    color: #5da994;
+  }
+  /* functions / methods */
+  .st-function,
+  .st-method {
+    color: #80a665;
+  }
+  .st-method {
+    font-style: italic;
+  }
+  /* builtins / operators / macros */
+  .st-builtin,
+  .st-operator,
+  .st-macro {
+    color: #cb7676;
+  }
+  /* variables / properties / parameters / members / events / decorator */
+  .st-variable,
+  .st-property,
+  .st-parameter,
+  .st-enumMember,
+  .st-event,
+  .st-decorator {
+    color: #bd976a;
+  }
+  .st-parameter,
+  .st-enumMember {
+    font-style: italic;
+  }
+  /* labels */
+  .st-label {
+    color: #999;
+    font-style: italic;
+  }
+  /* error tags */
+  .st-errorTag {
+    color: #fdaeb7;
+  }
+}
+
+/* Avoid the string class overriding escape sequences under nested
+   highlighting. */
+.st-escapeSequence .st-string {
+  color: inherit;
+}

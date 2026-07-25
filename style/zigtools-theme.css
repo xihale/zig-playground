@@ -1,0 +1,166 @@
+:root {
+  --code-background-color: white;
+  --code-text-color: #314750;
+}
+
+.st-comment {
+  color: hsl(270, 10%, 40%);
+}
+.st-keyword {
+  color: hsl(300, 55%, 45%);
+}
+.st-number, .st-keywordLiteral {
+  color: hsl(35, 80%, 34%);
+}
+.st-string {
+  color: hsl(100, 50%, 33%);
+}
+.st-operator {
+  color: hsl(215, 40%, 48%);
+}
+.st-escapeSequence {
+  color: hsl(215, 40%, 48%);
+}
+.st-label {
+  color: hsl(350, 100%, 20%);
+}
+.st-builtin {
+  color: hsl(15, 100%, 43%);
+}
+.st-parameter,
+.st-enumMember,
+.st-errorTag {
+  font-style: italic;
+}
+.st-type,
+.st-typeParameter,
+.st-enum,
+.st-class,
+.st-struct {
+  color: hsl(215, 70%, 48%);
+}
+.st-property {
+  color: hsl(180, 50%, 32%);
+}
+.st-function,
+.st-method {
+  color: hsl(45, 70%, 33%);
+}
+.st-method {
+  font-style: italic;
+}
+
+/* Avoid the string class overriding escape sequences when dealing with nested highlighting */
+.st-escapeSequence .st-string {
+  color: inherit;
+}
+
+/* Three-state theme: data-theme = "light" | "dark" forces a side;
+   absent (or any other value) follows the OS preference. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --code-background-color: #121212;
+    --code-text-color: #c8c8c8;
+  }
+
+  :root:not([data-theme="light"]) .st-comment {
+    color: hsl(270, 10%, 55%);
+  }
+  :root:not([data-theme="light"]) .st-keyword {
+    color: hsl(300, 50%, 65%);
+  }
+  :root:not([data-theme="light"]) .st-number,
+  :root:not([data-theme="light"]) .st-keywordLiteral {
+    color: hsl(20, 70%, 60%);
+  }
+  :root:not([data-theme="light"]) .st-string {
+    color: hsl(100, 40%, 55%);
+  }
+  :root:not([data-theme="light"]) .st-operator {
+    color: hsl(215, 40%, 55%);
+  }
+  :root:not([data-theme="light"]) .st-escapeSequence {
+    color: hsl(215, 40%, 55%);
+  }
+  :root:not([data-theme="light"]) .st-label {
+    color: hsl(350, 90%, 85%);
+  }
+  :root:not([data-theme="light"]) .st-builtin {
+    color: hsl(35, 70%, 50%);
+  }
+  :root:not([data-theme="light"]) .st-parameter,
+  :root:not([data-theme="light"]) .st-enumMember,
+  :root:not([data-theme="light"]) .st-errorTag {
+    font-style: italic;
+  }
+  :root:not([data-theme="light"]) .st-type,
+  :root:not([data-theme="light"]) .st-typeParameter,
+  :root:not([data-theme="light"]) .st-enum,
+  :root:not([data-theme="light"]) .st-class,
+  :root:not([data-theme="light"]) .st-struct {
+    color: hsl(215, 70%, 65%);
+  }
+  :root:not([data-theme="light"]) .st-property {
+    color: hsl(180, 50%, 50%);
+  }
+  :root:not([data-theme="light"]) .st-function,
+  :root:not([data-theme="light"]) .st-method {
+    color: hsl(45, 80%, 70%);
+  }
+  :root:not([data-theme="light"]) .st-method {
+    font-style: italic;
+  }
+}
+
+:root[data-theme="dark"] {
+  --code-background-color: #121212;
+  --code-text-color: #c8c8c8;
+}
+
+:root[data-theme="dark"] .st-comment {
+  color: hsl(270, 10%, 55%);
+}
+:root[data-theme="dark"] .st-keyword {
+  color: hsl(300, 50%, 65%);
+}
+:root[data-theme="dark"] .st-number,
+:root[data-theme="dark"] .st-keywordLiteral {
+  color: hsl(20, 70%, 60%);
+}
+:root[data-theme="dark"] .st-string {
+  color: hsl(100, 40%, 55%);
+}
+:root[data-theme="dark"] .st-operator {
+  color: hsl(215, 40%, 55%);
+}
+:root[data-theme="dark"] .st-escapeSequence {
+  color: hsl(215, 40%, 55%);
+}
+:root[data-theme="dark"] .st-label {
+  color: hsl(350, 90%, 85%);
+}
+:root[data-theme="dark"] .st-builtin {
+  color: hsl(35, 70%, 50%);
+}
+:root[data-theme="dark"] .st-parameter,
+:root[data-theme="dark"] .st-enumMember,
+:root[data-theme="dark"] .st-errorTag {
+  font-style: italic;
+}
+:root[data-theme="dark"] .st-type,
+:root[data-theme="dark"] .st-typeParameter,
+:root[data-theme="dark"] .st-enum,
+:root[data-theme="dark"] .st-class,
+:root[data-theme="dark"] .st-struct {
+  color: hsl(215, 70%, 65%);
+}
+:root[data-theme="dark"] .st-property {
+  color: hsl(180, 50%, 50%);
+}
+:root[data-theme="dark"] .st-function,
+:root[data-theme="dark"] .st-method {
+  color: hsl(45, 80%, 70%);
+}
+:root[data-theme="dark"] .st-method {
+  font-style: italic;
+}
