@@ -172,6 +172,7 @@ let runBlock: HTMLElement | null = null;
 
 type Status =
   | { kind: "idle" }
+  | { kind: "loading" }
   | { kind: "compiling" }
   | { kind: "running" }
   | { kind: "exit"; code: number; crashed?: boolean };
@@ -181,6 +182,9 @@ function setStatus(status: Status) {
   if (status.kind === "idle") {
     runStatus.classList.add("idle");
     statusText.textContent = "idle";
+  } else if (status.kind === "loading") {
+    runStatus.classList.add("busy");
+    statusText.textContent = "loading";
   } else if (status.kind === "compiling") {
     runStatus.classList.add("busy");
     statusText.textContent = "compiling";
@@ -235,15 +239,20 @@ function appendRun(text: string) {
 }
 
 // ─── zig worker / run queue ─────────────────────────────────────
+// 1) Worker loads std + zig.wasm async → UI shows "loading".
+// 2) Only after { ready: true } does the compile queue run ("compiling").
 // At most one compile+run in flight. Further requests keep a single
 // pending snapshot (latest source wins) and never double-post the worker.
+
+/** True once zig worker has finished fetching/compiling compiler assets. */
+let compilerReady = false;
 
 let zigWorker = new ZigWorker();
 /** Monotonic id for the in-flight job; stale worker/runner msgs ignored. */
 let runGen = 0;
-/** True while compile or run is in flight. */
+/** True while compile or run is in flight (not during asset loading). */
 let runBusy = false;
-/** Single pending source; overwritten on each request while busy. */
+/** Single pending source; overwritten on each request while busy/loading. */
 let pendingSource: string | null = null;
 /** Source of the last started job — skip no-op auto-runs when idle. */
 let lastStartedSource: string | null = null;
@@ -288,6 +297,7 @@ function completeRun(gen: number) {
 
 /**
  * Request a compile+run.
+ * - Before compiler ready: queue only, status stays "loading".
  * - While busy: one pending slot only, always overwritten (latest wins).
  *   Auto-run with unchanged source does not queue (avoids first-load
  *   double-run when `;` logic races the initial job).
@@ -295,6 +305,16 @@ function completeRun(gen: number) {
  */
 function requestRun(opts: { force?: boolean } = {}) {
   const source = editor.state.doc.toString();
+
+  if (!compilerReady) {
+    // Asset load in flight — never show "compiling" yet.
+    if (!opts.force && pendingSource !== null && source === pendingSource) return;
+    if (!opts.force && pendingSource === null && source === lastStartedSource) return;
+    pendingSource = source;
+    setStatus({ kind: "loading" });
+    return;
+  }
+
   if (runBusy) {
     if (!opts.force && source === lastStartedSource) return;
     pendingSource = source;
@@ -326,6 +346,24 @@ function scheduleAutoRun() {
 }
 
 zigWorker.onmessage = (ev: MessageEvent) => {
+  // Compiler assets ready (or failed) — open the compile queue.
+  if (ev.data.ready === true) {
+    compilerReady = true;
+    if (pendingSource !== null) {
+      const next = pendingSource;
+      pendingSource = null;
+      startRun(next);
+    }
+    return;
+  }
+  if (ev.data.ready === false) {
+    compilerReady = false;
+    clearOutput();
+    appendCompile(ev.data.error ? `${ev.data.error}\n` : "failed to load compiler\n");
+    setStatus({ kind: "exit", code: 1, crashed: true });
+    return;
+  }
+
   const gen = runGen;
 
   // Compile-time stderr (diagnostics). The UI already shows "compiling"
@@ -419,7 +457,9 @@ window.addEventListener("keydown", (e) => {
   }
 });
 
-// First paint: compile & run the default example.
+// First paint: show loading while the worker fetches zig.wasm / std;
+// the initial example is queued and only compiles after { ready: true }.
+setStatus({ kind: "loading" });
 runCode();
 
 // ─── Resize bar ─────────────────────────────────────────────────
