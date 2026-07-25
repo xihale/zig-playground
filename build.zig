@@ -2,6 +2,9 @@ const std = @import("std");
 
 pub fn build(b: *std.Build) void {
     const target = b.resolveTargetQuery(.{ .cpu_arch = .wasm32, .os_tag = .wasi });
+    // ReleaseSmall is the right default for the browser: ReleaseFast balloons zig.wasm
+    // ~3.5MiB → ~24MiB with no meaningful compile-speed win on playground snippets.
+    // Override with: zig build -Doptimize=ReleaseFast  (or --release=fast)
     const optimize: std.builtin.OptimizeMode = b.standardOptimizeOption(.{ .preferred_optimize_mode = .ReleaseSmall });
 
     const enable_wasm_opt = b.option(bool, "wasm-opt", "Run wasm-opt") orelse false;

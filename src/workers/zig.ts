@@ -1,5 +1,5 @@
 import { WASI, PreopenDirectory, Fd, File, OpenFile, Inode, Directory } from "@bjorn3/browser_wasi_shim";
-import { getLatestZigArchive, stderrOutput } from "../utils";
+import { compileWasmAsset, fetchAssetBuffer, getLatestZigArchive, stderrOutput } from "../utils";
 
 type Ready = {
     libDirectory: Directory;
@@ -17,12 +17,8 @@ function ensureReady(): Promise<Ready> {
         readyPromise = (async (): Promise<Ready> => {
             const [libDirectory, compilerRt, zigModule] = await Promise.all([
                 getLatestZigArchive(),
-                fetch(new URL("../../zig-out/libcompiler_rt.a", import.meta.url)).then((r) =>
-                    r.arrayBuffer(),
-                ),
-                WebAssembly.compileStreaming(
-                    fetch(new URL("../../zig-out/bin/zig.wasm", import.meta.url)),
-                ),
+                fetchAssetBuffer(new URL("../../zig-out/libcompiler_rt.a", import.meta.url)),
+                compileWasmAsset(new URL("../../zig-out/bin/zig.wasm", import.meta.url)),
             ]);
             return { libDirectory, compilerRt, zigModule };
         })();
