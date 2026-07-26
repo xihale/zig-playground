@@ -65,8 +65,7 @@
     --editor-line-number-padding-left: 24px;
     --editor-line-number-padding-right: 16px;
     --editor-text-tertiary: var(--body-mid);
-    /* Active line — solid soft lift off pure canvas (alpha washes vanished on #0a0a0a). */
-    --editor-surface: #16181c;
+    --editor-surface: rgba(255, 255, 255, 0.035);
     --editor-focus-ring: rgba(255, 255, 255, 0.14);
 
     /* shared shape language — sharp corners throughout */
@@ -152,6 +151,10 @@ main {
     flex: 1 1 auto;
     min-height: 0;
     overflow: hidden;
+    /* Size the playground itself (viewport or embed iframe), not the
+       browser window — narrow embeds stack even on a wide desktop. */
+    container-type: inline-size;
+    container-name: playground;
 }
 
 #split-pane {
@@ -160,12 +163,12 @@ main {
     height: 100%;
     overflow: hidden;
     /* e:1 editor:preview (e/(e+1) ≈ 73.108%). Resize logic overwrites. */
-    --editor-width-percent: 73.108%;
+    --editor-size-percent: 73.108%;
 }
 
 #editor-pane {
-    flex: 0 0 var(--editor-width-percent);
-    width: var(--editor-width-percent);
+    flex: 0 0 var(--editor-size-percent);
+    width: var(--editor-size-percent);
     min-width: 0;
     display: flex;
     flex-direction: column;
@@ -382,23 +385,63 @@ main {
     overflow: hidden;
 }
 
-#output-container {
+/* Shell around the scrollport. Keeps floating status (embed) pinned to
+   the pane while long lines scroll underneath. */
+#output-wrap {
     flex: 1 1 auto;
+    min-width: 0;
     min-height: 0;
     position: relative;
-    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
     background-color: var(--output-background);
+}
+
+#output-container {
+    flex: 1 1 auto;
+    /* Shrink inside flex so long pre lines scroll here, not expand the pane. */
+    min-width: 0;
+    min-height: 0;
+    overflow-x: auto;
+    overflow-y: auto;
+    /* No horizontal padding here — scroll containers clip end-padding.
+       Inset lives on the children so left/right stay visible while scrolling. */
+    padding: 0;
+    box-sizing: border-box;
     color: var(--output-text);
 }
 
 #output-container > .zig-output,
 #output-container > .runner-output {
+    /* Preserve program output exactly — no wrap (would change layout). */
     white-space: pre;
     font-family: var(--editor-font-mono);
     font-size: var(--editor-font-size);
     line-height: var(--editor-line-height);
-    padding: 1rem 1.1rem;
+    margin: 0;
     color: var(--output-text);
+    /* content-box so horizontal padding sits *outside* the text measure.
+       width:max-content grows with long lines; min-width fills short ones
+       without always forcing a horizontal scrollbar
+       (100% − left/right padding). Scroll extent includes the inset, so
+       glyphs never kiss the pane edge at either end. */
+    display: block;
+    box-sizing: content-box;
+    width: max-content;
+    min-width: calc(100% - 2.5rem);
+    padding: 0 1.25rem;
+}
+
+/* Vertical inset on first/last block (container padding would not ride
+   the horizontal scroll end either). */
+#output-container > .zig-output:first-child,
+#output-container > .runner-output:first-child {
+    padding-top: 1rem;
+}
+#output-container > .zig-output:last-child,
+#output-container > .runner-output:last-child {
+    padding-bottom: 1rem;
 }
 
 /* Compile diagnostics read as an error surface. */
@@ -429,22 +472,26 @@ main {
     background-color: var(--resizer-hover);
 }
 
-/* ─── Responsive: narrow screens switch to vertical split ──────── */
+/* ─── Responsive: narrow playground stacks editor above output ───
+   Threshold is the split-pane container width (works for full page
+   and embed iframes). Output stays after the resizer in DOM order. */
 
-@media (max-width: 768px) {
+@container playground (max-width: 960px) {
+    /* Keep --editor-size-percent (e:1 ≈ 73.108%) for height too. */
     #split-pane {
         flex-direction: column;
-        --editor-width-percent: 50%;
     }
     #editor-pane {
-        flex: 0 0 var(--editor-width-percent);
+        flex: 0 0 var(--editor-size-percent);
         width: 100%;
-        height: var(--editor-width-percent);
+        height: var(--editor-size-percent);
+        min-height: 8rem;
     }
     #preview-pane {
         flex: 1 1 0;
         width: 100%;
         height: auto;
+        min-width: 0;
         min-height: 0;
     }
     #resize-bar {
@@ -475,7 +522,8 @@ body.embed #preview-pane {
     position: relative;
 }
 
-/* Status chip reparented into #output-container in embed mode. */
+/* Status chip reparented onto #output-wrap in embed mode (outside the
+   scrollport) so it stays top-right while output scrolls. */
 #run-status.embed-status {
     position: absolute;
     top: 0.45rem;
@@ -487,19 +535,6 @@ body.embed #preview-pane {
     pointer-events: none;
     font-size: 0.75rem;
     gap: 0.35rem;
-}
-
-/* Interior Twoslash cut gap (leading/trailing cuts hide with no widget). */
-.cm-cut-ellipsis {
-    color: var(--muted, #8b949e);
-    opacity: 0.55;
-    font-family: var(--editor-font-mono, ui-monospace, monospace);
-    font-size: 0.85em;
-    letter-spacing: 0.15em;
-    line-height: var(--editor-line-height, 1.5);
-    padding: 0 0.35em;
-    user-select: none;
-    pointer-events: none;
 }
 
 /* ─── CodeMirror integration ──────────────────────────────────── */
@@ -544,12 +579,9 @@ body.embed #preview-pane {
     padding: 0 var(--editor-line-number-padding-right) 0 var(--editor-line-number-padding-left) !important;
 }
 
-/* Active line only while editor focused (CM adds/removes .cm-focused). */
-.cm-editor.cm-focused .cm-line.cm-activeLine {
-    background-color: #1a1c22 !important;
-}
-.cm-editor.cm-focused .cm-activeLineGutter {
-    background-color: #1a1c22 !important;
+.cm-activeLine,
+.cm-activeLineGutter {
+    background: var(--editor-surface) !important;
 }
 
 .cm-focused {

@@ -7,10 +7,12 @@
  *   // ---cut-after---    drop everything below (incl. this line)
  *   // ---cut-start--- … // ---cut-end---   drop a mid-file span
  *
- * Embed strategy (no CodeMirror block decorations — those fought LSP,
- * active-line, and docView):
+ * Embed strategy (no CodeMirror block decorations — those fought active-line
+ * and docView):
  *   • Editor document = visible slice only
  *   • Compile / share reassemble via prefix + display + suffix
+ *   • LSP dual-doc (`cut-lsp.ts`): ZLS sees the full program; wire messages
+ *     map positions between slice ↔ full (single-island cuts only)
  *   • Full UI keeps markers in the buffer so authors can edit them
  */
 

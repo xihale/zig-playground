@@ -43,6 +43,7 @@ import {
   buildIframeSnippet,
 } from "./embed.ts";
 import { bindCuts, resolveCompileSource, type CutBinding } from "./cut.ts";
+import { setCutLspBridge } from "./cut-lsp.ts";
 // @ts-ignore
 import ZigWorker from './workers/zig.ts?worker';
 // @ts-ignore
@@ -164,7 +165,10 @@ const rawInitial = embedConfig.code ?? savedSource ?? examples[0].code;
 /**
  * Embed + Twoslash cuts: editor holds only the visible slice; compile
  * reassembles prefix/suffix. No block-replace decorations (those broke
- * active-line, semantic tokens, and occasionally docView).
+ * active-line and docView).
+ *
+ * LSP dual-doc (`cut-lsp.ts`): ZLS is fed the full stitched program so
+ * hover / diagnostics / complete stay correct on single-island cuts.
  */
 let cutBinding: CutBinding | null = null;
 let initialDoc = rawInitial;
@@ -185,6 +189,16 @@ function compileSource(): string {
   return cutBinding ? resolveCompileSource(display, cutBinding) : display;
 }
 
+// Wire dual-doc before the LSP plugin opens the file on editor construct.
+setCutLspBridge(cutBinding, () => {
+  // Editor may not exist yet during the first didOpen; use initialDoc.
+  try {
+    return editor.state.doc.toString();
+  } catch {
+    return initialDoc;
+  }
+});
+
 const editor = new EditorView({
   extensions: [],
   parent: document.getElementById("editor")!,
@@ -197,8 +211,13 @@ const editor = new EditorView({
       keymap.of([
         indentWithTab,
         {
+          // Format rewrites the whole buffer — skip in cut dual-doc (would
+          // only reformat the slice and break the stitch).
           key: "Mod-s",
-          run: formatDocument,
+          run: (view) => {
+            if (cutBinding?.visible) return false;
+            return formatDocument(view);
+          },
         },
         {
           // Useful in embed mode (no Run button) and as a power-user shortcut.
@@ -212,15 +231,14 @@ const editor = new EditorView({
       zigLanguage,
       syntaxHighlighting(highlightStyle),
       lspClient.plugin("file:///main.zig"),
-      // Auto-run on any edit once LSP reports no errors (debounce + recheck
-      // when publishDiagnostics lands). Draft save is independent of that.
+      // Auto-run (full UI and embed share the same core):
+      // any edit → debounce → run only when LSP reports no errors.
+      // Retries when publishDiagnostics clears the last errors.
       EditorView.updateListener.of((update) => {
         if (update.docChanged) {
           scheduleSave();
           autoRunWanted = true;
           scheduleAutoRun();
-          // Don't react to diagnostics in the same update — they lag the
-          // new buffer; the debounce timer + later publishes handle it.
           return;
         }
         // Fresh diagnostics: retry if an earlier attempt was blocked by errors.
@@ -275,6 +293,9 @@ for (const ex of examples) {
   }
 }
 exampleSelect.addEventListener("change", () => {
+  // Full-app example switch: clear any cut binding from a prior URL load.
+  cutBinding = null;
+  setCutLspBridge(null, editorSource);
   if (exampleSelect.value === "") {
     replaceDoc(blankTemplate);
     runCode();
@@ -288,27 +309,22 @@ exampleSelect.addEventListener("change", () => {
 });
 
 // ─── Output routing ─────────────────────────────────────────────
-// Keep the previous run's output + exit code visible while a new
-// compile is in flight. Swap both only when a concrete result is ready
-// (compile failure, first run chunk, or exit). No intermediate
-// "compiling" / "running" status flash.
+// Single output area that shows only the current run. Each run clears
+// the previous content. Status (idle / compiling / exit code) lives in
+// the preview toolbar — not in the text stream.
 
 const outputContainer = document.getElementById("output-container")!;
 const runStatus = document.getElementById("run-status")!;
 const statusText = document.getElementById("status-text")!;
 
-/** Currently displayed blocks (null after a swap until recreated). */
 let compileBlock: HTMLElement | null = null;
 let runBlock: HTMLElement | null = null;
-/** Buffered text for the in-flight generation (not yet on screen). */
-let bufCompile = "";
-let bufRun = "";
-/** True once this generation has replaced the previous output. */
-let outputCommitted = false;
 
 type Status =
   | { kind: "idle" }
   | { kind: "loading" }
+  | { kind: "compiling" }
+  | { kind: "running" }
   | { kind: "exit"; code: number; crashed?: boolean };
 
 function setStatus(status: Status) {
@@ -319,6 +335,12 @@ function setStatus(status: Status) {
   } else if (status.kind === "loading") {
     runStatus.classList.add("busy");
     statusText.textContent = "loading";
+  } else if (status.kind === "compiling") {
+    runStatus.classList.add("busy");
+    statusText.textContent = "compiling";
+  } else if (status.kind === "running") {
+    runStatus.classList.add("busy");
+    statusText.textContent = "running";
   } else {
     const bad = status.code !== 0 || !!status.crashed;
     runStatus.classList.add(bad ? "err" : "ok");
@@ -326,66 +348,41 @@ function setStatus(status: Status) {
   }
 }
 
-/** Remove displayed output blocks (keeps embed floating status). */
-function wipeDisplayedOutput() {
-  for (const child of [...outputContainer.children]) {
-    if (child === runStatus) continue;
-    child.remove();
-  }
+/** Wipe the output area for a fresh run. */
+function clearOutput() {
+  outputContainer.replaceChildren();
   compileBlock = null;
   runBlock = null;
+  // Fresh run: show the start of each line (padding provides the inset).
+  outputContainer.scrollLeft = 0;
 }
 
 function scrollOutput() {
+  // Follow new output vertically; leave horizontal scroll alone so the
+  // user can pan long lines without being yanked back to the start.
   outputContainer.scrollTop = outputContainer.scrollHeight;
 }
 
-/**
- * First result for this generation: drop the previous run's DOM and
- * paint the buffered content. Later chunks append to the live blocks.
- */
-function commitOutput(mode: "compile" | "run") {
-  if (outputCommitted) return;
-  wipeDisplayedOutput();
-  outputCommitted = true;
-
-  if (mode === "compile") {
-    if (bufCompile) {
-      compileBlock = document.createElement("div");
-      compileBlock.className = "zig-output";
-      compileBlock.textContent = bufCompile;
-      outputContainer.appendChild(compileBlock);
-    }
-  } else if (bufRun) {
-    runBlock = document.createElement("div");
-    runBlock.className = "runner-output";
-    runBlock.textContent = bufRun;
-    outputContainer.appendChild(runBlock);
+function appendCompile(text: string) {
+  if (!compileBlock) {
+    compileBlock = document.createElement("div");
+    compileBlock.className = "zig-output";
+    outputContainer.appendChild(compileBlock);
   }
+  compileBlock.textContent += text;
   scrollOutput();
 }
 
-/** Buffer compile diagnostics; paint only after a failed compile. */
-function appendCompile(text: string) {
-  bufCompile += text;
-  if (outputCommitted) {
-    if (!compileBlock) {
-      compileBlock = document.createElement("div");
-      compileBlock.className = "zig-output";
-      outputContainer.appendChild(compileBlock);
-    }
-    compileBlock.textContent += text;
-    scrollOutput();
+/** Drop the compile-stage block — used on success so progress lines
+ *  vanish before the program output streams in. */
+function clearCompile() {
+  if (compileBlock) {
+    compileBlock.remove();
+    compileBlock = null;
   }
 }
 
-/** Buffer program output; swap previous result on the first chunk. */
 function appendRun(text: string) {
-  bufRun += text;
-  if (!outputCommitted) {
-    commitOutput("run");
-    return;
-  }
   if (!runBlock) {
     runBlock = document.createElement("div");
     runBlock.className = "runner-output";
@@ -395,25 +392,9 @@ function appendRun(text: string) {
   scrollOutput();
 }
 
-/** Compile failed — show diagnostics (or empty if none). */
-function commitCompileFailure() {
-  commitOutput("compile");
-}
-
-/**
- * Run finished with no stdout yet — clear previous output so a silent
- * program doesn't leave the last run's print lines on screen.
- */
-function commitEmptyRunIfNeeded() {
-  if (!outputCommitted) {
-    wipeDisplayedOutput();
-    outputCommitted = true;
-  }
-}
-
 // ─── zig worker / run queue ─────────────────────────────────────
 // 1) Worker loads std + zig.wasm async → UI shows "loading".
-// 2) Only after { ready: true } does the compile queue run.
+// 2) Only after { ready: true } does the compile queue run ("compiling").
 // At most one compile+run in flight. Further requests keep a single
 // pending snapshot (latest source wins) and never double-post the worker.
 
@@ -437,22 +418,30 @@ let autoRunTimer: ReturnType<typeof setTimeout> | null = null;
  */
 let autoRunWanted = false;
 let activeRunner: Worker | null = null;
+/** Delay before flipping status to "running" — skips flash on fast exits. */
+let runningStatusTimer: ReturnType<typeof setTimeout> | null = null;
+
+function clearRunningStatusTimer() {
+  if (runningStatusTimer !== null) {
+    clearTimeout(runningStatusTimer);
+    runningStatusTimer = null;
+  }
+}
 
 function startRun(source: string) {
   runGen += 1;
   runBusy = true;
   pendingSource = null;
   lastStartedSource = source;
+  clearRunningStatusTimer();
 
   if (activeRunner) {
     activeRunner.terminate();
     activeRunner = null;
   }
 
-  // Keep previous output + exit code until this gen has a result.
-  bufCompile = "";
-  bufRun = "";
-  outputCommitted = false;
+  clearOutput();
+  setStatus({ kind: "compiling" });
   zigWorker.postMessage({ run: source });
 }
 
@@ -471,14 +460,14 @@ function completeRun(gen: number) {
  * - Before compiler ready: queue only, status stays "loading".
  * - While busy: one pending slot only, always overwritten (latest wins).
  *   Auto-run with unchanged source does not queue (avoids first-load
- *   double-run when auto-run races the initial job).
+ *   double-run when `;` logic races the initial job).
  * - When idle: start immediately (auto skips unchanged source).
  */
 function requestRun(opts: { force?: boolean } = {}) {
   const source = compileSource();
 
   if (!compilerReady) {
-    // Asset load in flight — queue only; status stays "loading".
+    // Asset load in flight — never show "compiling" yet.
     if (!opts.force && pendingSource !== null && source === pendingSource) return;
     if (!opts.force && pendingSource === null && source === lastStartedSource) return;
     pendingSource = source;
@@ -502,7 +491,7 @@ function requestRun(opts: { force?: boolean } = {}) {
   if (!opts.force && source === lastStartedSource) return;
   startRun(source);
 }
-/** Button / first load / example switch — always run. */
+/** Button / first load / example switch — always run (ignores LSP errors). */
 function runCode() {
   autoRunWanted = false;
   if (autoRunTimer !== null) {
@@ -532,12 +521,12 @@ function tryAutoRun() {
   requestRun({ force: false });
 }
 
-/** Debounced auto-run after any edit — skip if idle and source unchanged. */
+/** Debounced auto-run — push buffer to ZLS, then gate on diagnostics. */
 function scheduleAutoRun() {
   if (autoRunTimer !== null) clearTimeout(autoRunTimer);
   autoRunTimer = setTimeout(() => {
     autoRunTimer = null;
-    // Push the latest buffer to ZLS so diagnostics match what we may run.
+    // Push the latest buffer (dual-doc transport rewrites to full source).
     const plugin = LSPPlugin.get(editor);
     if (plugin) plugin.client.sync();
     tryAutoRun();
@@ -557,19 +546,16 @@ zigWorker.onmessage = (ev: MessageEvent) => {
   }
   if (ev.data.ready === false) {
     compilerReady = false;
-    bufCompile = "";
-    bufRun = "";
-    outputCommitted = false;
+    clearOutput();
     appendCompile(ev.data.error ? `${ev.data.error}\n` : "failed to load compiler\n");
-    commitCompileFailure();
     setStatus({ kind: "exit", code: 1, crashed: true });
     return;
   }
 
   const gen = runGen;
 
-  // Compile-time stderr (diagnostics). Buffered until failed/success;
-  // skip the redundant "Compiling..." progress marker.
+  // Compile-time stderr (diagnostics). The UI already shows "compiling"
+  // in the status area — skip the redundant "Compiling..." marker.
   if (ev.data.stderr) {
     if (gen !== runGen) return;
     const text: string = ev.data.stderr;
@@ -578,10 +564,10 @@ zigWorker.onmessage = (ev: MessageEvent) => {
     return;
   }
 
-  // A failed compile: paint buffered diagnostics + exit code together.
+  // A failed compile: the diagnostics are this run's result.
   if (ev.data.failed) {
     if (gen !== runGen) return;
-    commitCompileFailure();
+    clearRunningStatusTimer();
     setStatus({ kind: "exit", code: 1, crashed: true });
     completeRun(gen);
     return;
@@ -599,9 +585,15 @@ zigWorker.onmessage = (ev: MessageEvent) => {
       return;
     }
 
-    // Compile succeeded — discard any progress text; only program I/O
-    // (or a silent empty panel) will replace the previous output.
-    bufCompile = "";
+    clearCompile();
+    // Only show "running" if still in flight after 350ms — fast programs
+    // go compiling → exit code with no intermediate flicker.
+    clearRunningStatusTimer();
+    runningStatusTimer = setTimeout(() => {
+      runningStatusTimer = null;
+      if (gen !== runGen) return;
+      setStatus({ kind: "running" });
+    }, 350);
 
     if (activeRunner) {
       activeRunner.terminate();
@@ -616,8 +608,7 @@ zigWorker.onmessage = (ev: MessageEvent) => {
       if (rev.data.stderr) {
         appendRun(rev.data.stderr);
       } else if (rev.data.exitCode !== undefined) {
-        // No stdout: still swap so a previous print doesn't linger.
-        commitEmptyRunIfNeeded();
+        clearRunningStatusTimer();
         setStatus({
           kind: "exit",
           code: rev.data.exitCode,
@@ -638,6 +629,8 @@ const runButton = document.getElementById("run")! as HTMLButtonElement;
 runButton.addEventListener("click", runCode);
 
 function resetCode() {
+  cutBinding = null;
+  setCutLspBridge(null, editorSource);
   exampleSelect.value = "";
   replaceDoc(blankTemplate);
   runCode();
@@ -741,8 +734,11 @@ if (!embedConfig.embed) {
 }
 
 // Embed: float status over the output pane (toolbars are hidden).
+// Mount on #output-wrap (not the scrollport) so exit code stays pinned
+// top-right while long lines scroll underneath.
 if (embedConfig.embed) {
-  outputContainer.appendChild(runStatus);
+  const outputWrap = document.getElementById("output-wrap")!;
+  outputWrap.appendChild(runStatus);
   runStatus.classList.add("embed-status");
 }
 
@@ -757,9 +753,9 @@ if (embedConfig.autorun) {
 }
 
 // ─── Resize bar ─────────────────────────────────────────────────
-// Horizontal split on wide screens (drag X), vertical on narrow ones
-// (drag Y). We detect orientation from the live computed flex-direction
-// so the same logic handles the CSS media-query switch.
+// Side-by-side on wide playgrounds (drag X); stacked on narrow ones
+// (drag Y, output below). Orientation comes from the live computed
+// flex-direction so the same logic follows the container query.
 
 const splitPane = document.getElementById("split-pane")!;
 const resizeBar = document.getElementById("resize-bar")!;
@@ -777,7 +773,7 @@ function onResizeBarMove(event: MouseEvent) {
     percent = (event.clientX - rect.left) / rect.width * 100;
   }
   percent = Math.min(Math.max(10, percent), 90);
-  splitPane.style.setProperty("--editor-width-percent", `${percent}%`);
+  splitPane.style.setProperty("--editor-size-percent", `${percent}%`);
 }
 
 function onResizeBarMouseUp() {
@@ -797,3 +793,14 @@ resizeBar.addEventListener("mousedown", event => {
     resizeBar.classList.add("dragging");
   }
 });
+
+// Dragged split ratios are axis-specific. When the container flips
+// between row and column, drop the inline percent so CSS defaults apply.
+let lastVerticalSplit = isVerticalSplit();
+new ResizeObserver(() => {
+  const vertical = isVerticalSplit();
+  if (vertical !== lastVerticalSplit) {
+    lastVerticalSplit = vertical;
+    splitPane.style.removeProperty("--editor-size-percent");
+  }
+}).observe(splitPane);
