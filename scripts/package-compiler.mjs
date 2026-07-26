@@ -28,24 +28,29 @@ if (!id) {
 
 const from = resolve(root, arg("--from", "zig-out"));
 const to = resolve(root, arg("--to", join("public", "compilers", id)));
+const optionalZls = process.argv.includes("--optional-zls");
 
 const files = [
-  { src: join(from, "bin", "zig.wasm"), dest: "zig.wasm" },
-  { src: join(from, "bin", "zls.wasm"), dest: "zls.wasm" },
-  { src: join(from, "libcompiler_rt.a"), dest: "libcompiler_rt.a" },
-  { src: join(from, "zig.tar.gz"), dest: "zig.tar.gz" },
+  { src: join(from, "bin", "zig.wasm"), dest: "zig.wasm", required: true },
+  { src: join(from, "bin", "zls.wasm"), dest: "zls.wasm", required: !optionalZls },
+  { src: join(from, "libcompiler_rt.a"), dest: "libcompiler_rt.a", required: true },
+  { src: join(from, "zig.tar.gz"), dest: "zig.tar.gz", required: true },
 ];
 
 for (const f of files) {
   if (!existsSync(f.src)) {
-    console.error(`missing ${f.src} — run zig build first`);
-    process.exit(1);
+    if (f.required) {
+      console.error(`missing ${f.src} — run zig build first`);
+      process.exit(1);
+    }
+    console.warn(`optional missing ${f.src} — skipping`);
   }
 }
 
 mkdirSync(to, { recursive: true });
 const metaFiles = {};
 for (const f of files) {
+  if (!existsSync(f.src)) continue;
   const dest = join(to, f.dest);
   cpSync(f.src, dest);
   metaFiles[f.dest] = statSync(dest).size;

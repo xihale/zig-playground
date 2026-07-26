@@ -41,12 +41,18 @@ Design: [`docs/superpowers/specs/2026-07-26-multi-version-compilers-design.md`](
 
 **Source trees (do not use GitHub `ziglang/zig` master — it is a Codeberg stub):**
 
-| id | git | hostZig | patch |
-|----|-----|---------|-------|
-| `0.15.2` | `github.com/ziglang/zig@0.15.2` | `0.15.2` | `patches/zig-0.15.2-playground-wasm.patch` |
-| `master` | **`codeberg.org/ziglang/zig@master`** | **`master`** (nightly) | `patches/zig-master-playground-wasm.patch` |
+| id | build | git | hostZig | notes |
+|----|-------|-----|---------|-------|
+| `0.15.2` | `playground` | `github.com/ziglang/zig@0.15.2` | `0.15.2` | full zig+zls via repo `build.zig` |
+| `master` | **`in-tree`** | **`codeberg.org/ziglang/zig@master`** | **`master`** (nightly) | builds wasm inside the Zig tree; ZLS not yet supportable ([zls#3208](https://github.com/zigtools/zls/issues/3208)) → `zlsFallbackId` |
 
-Local overrides: `../zig-wasm` (0.15.2 playground tree), `../zig-master` (optional official master checkout).
+Local overrides: `../zig-wasm` (0.15.2), `../zig-master` (official master). Host nightlies via `zvm i master`.
+
+```bash
+# master compiler (needs host Zig master / nightly)
+zvm i master   # or: export ZIG=$HOME/.local/share/zvm/master/zig
+npm run compilers:scheduled
+```
 
 ```bash
 npm run compilers:plan          # dry-run: who would build

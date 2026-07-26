@@ -18,7 +18,9 @@ export function loadVersionsManifest(path = join(root, "versions.json")) {
     if (!v.id) throw new Error("versions.json: entry missing id");
     if (ids.has(v.id)) throw new Error(`versions.json: duplicate id ${v.id}`);
     ids.add(v.id);
-    if (!v.zls?.url || !v.zls?.hash) {
+    // playground builds need zls package coords; in-tree may use zlsFallbackId only.
+    const mode = v.build || "playground";
+    if (mode === "playground" && (!v.zls?.url || !v.zls?.hash)) {
       throw new Error(`versions.json: ${v.id} missing zls.url / zls.hash`);
     }
     if (!v.zig?.path && !v.zig?.git?.repo) {
