@@ -1,8 +1,8 @@
 // Bundled playground examples, resolved per compiler version.
 //
-// Shared language/std demos live in examples/shared.ts and run under the
-// WASI wasm runner (std.debug.print only; no libc / real FS / networking).
-// Version-specific entries cover std renames (e.g. GPA → DebugAllocator).
+// - 0.15.2: shared language demos + GeneralPurposeAllocator (debug.print).
+// - 0.16.0 / master: a few process.Init / std.Io showcases, then shared
+//   language demos still on debug.print (no libc / real FS / networking).
 
 export type { Example } from "./examples/types.ts";
 export { sharedExamples } from "./examples/shared.ts";

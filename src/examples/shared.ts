@@ -1,5 +1,6 @@
-// Cross-version examples: language + std that work on both 0.15.2 and 0.16.0
-// under the playground WASI wasm runner (print-only, no libc/FS/net).
+// Language / pure-compute demos shared by 0.15.2 and 0.16.0.
+// Prefer std.debug.print here; 0.16 only swaps in Init/Io for demos where
+// that API's advantages matter (see v0_16_0.ts).
 
 import type { Example } from "./types.ts";
 
