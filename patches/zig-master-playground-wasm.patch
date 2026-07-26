@@ -1,0 +1,36 @@
+From 64e26e03bb409838af580952afbaaaded34d85e9 Mon Sep 17 00:00:00 2001
+From: x <x@local>
+Date: Sun, 26 Jul 2026 12:34:43 +0800
+Subject: [PATCH] dev: playground wasm flavor (no wasi serve path)
+
+---
+ src/dev.zig | 10 ++++++----
+ 1 file changed, 6 insertions(+), 4 deletions(-)
+
+diff --git a/src/dev.zig b/src/dev.zig
+index 47acafc9..492763d4 100644
+--- a/src/dev.zig
++++ b/src/dev.zig
+@@ -197,13 +197,15 @@ pub const Env = enum {
+                 else => Env.sema.supports(feature),
+             },
+             .wasm => switch (feature) {
+-                .incremental,
+-                .legalize,
+-                .stdio_listen,
+                 .wasm_backend,
+                 .wasm_linker,
++                .legalize,
++                .build_exe_command,
++                .build_obj_command,
++                .sema,
++                .ast_gen,
+                 => true,
+-                else => Env.sema.supports(feature),
++                else => false,
+             },
+             .@"x86_64-linux" => switch (feature) {
+                 .stdio_listen,
+-- 
+2.55.0
+

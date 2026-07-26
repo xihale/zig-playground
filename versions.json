@@ -23,19 +23,18 @@
       "id": "master",
       "label": "master",
       "schedule": "3d",
-      "zigVersionString": "0.15.2-dev",
-      "hostZig": "0.15.2",
+      "hostZig": "master",
       "zig": {
-        "path": "../zig-wasm",
+        "path": "../zig-master",
         "git": {
-          "repo": "https://github.com/ziglang/zig",
-          "ref": "0.15.2"
+          "repo": "https://codeberg.org/ziglang/zig",
+          "ref": "master"
         },
-        "patch": "patches/zig-0.15.2-playground-wasm.patch"
+        "patch": "patches/zig-master-playground-wasm.patch"
       },
       "zls": {
-        "url": "git+https://github.com/zigtools/zls?ref=0.15.1#f91b2e1e305e5d5bd3725aea90f9f9bfb3dce055",
-        "hash": "zls-0.15.1-rmm5fgQ2JADjDh84Ja3pDBZ1io_kKdHS2YhQyvBYz66r"
+        "url": "git+https://github.com/zigtools/zls?ref=master#8da87d4f3305a550e7b739bad764e34bf1e46a08",
+        "hash": "zls-0.17.0-dev-rmm5fhsnJgACAm2dSuoMNDK6QziDk419sy5-ORvIiL0y"
       }
     }
   ]

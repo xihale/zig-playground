@@ -39,7 +39,14 @@ Design: [`docs/superpowers/specs/2026-07-26-multi-version-compilers-design.md`](
 | `versions[].zls.url` / `hash` | Paired ZLS package |
 | `versions[].zigVersionString` | Passed as `-Dzig-version-string` |
 
-**Important:** source builds use `ziglang/zig@0.15.2` + `patches/zig-0.15.2-playground-wasm.patch`. Do **not** point git at `zigtools/zig@wasm32-wasi` with host Zig 0.15.2 — that branch is 0.16-era and fails with `use_new_linker` / `b.graph.io` errors.
+**Source trees (do not use GitHub `ziglang/zig` master — it is a Codeberg stub):**
+
+| id | git | hostZig | patch |
+|----|-----|---------|-------|
+| `0.15.2` | `github.com/ziglang/zig@0.15.2` | `0.15.2` | `patches/zig-0.15.2-playground-wasm.patch` |
+| `master` | **`codeberg.org/ziglang/zig@master`** | **`master`** (nightly) | `patches/zig-master-playground-wasm.patch` |
+
+Local overrides: `../zig-wasm` (0.15.2 playground tree), `../zig-master` (optional official master checkout).
 
 ```bash
 npm run compilers:plan          # dry-run: who would build
@@ -73,7 +80,7 @@ npm run preview
 | Workflow | When compilers are built |
 |----------|---------------------------|
 | **Deploy** (every push) | **Reuses Release.** Downloads `compilers-latest` → only builds frontend. Source rebuild only if packages missing after download, or **Run workflow → rebuild_compilers**. |
-| **Master compiler** | Builds entries with `schedule` (~every 3 days + **manual**). Other ids filled from Release. |
+| **Master compiler** | Builds `schedule` ids with **hostZig=master** from Codeberg (~every 3 days + **manual**). On success, refreshes `compilers-latest` Release. Other ids filled from previous Release. |
 
 So: **compile once, upload Release, reuse forever** until you force rebuild or the release is incomplete.
 

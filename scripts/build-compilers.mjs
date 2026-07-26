@@ -180,13 +180,30 @@ function resolveZigTree(entry, cacheRoot) {
   throw new Error(`[${entry.id}] no zig.path on disk and no zig.git configured`);
 }
 
+function hostZigBinary(entry) {
+  // Prefer per-id env (CI can install several hosts), then ZIG, then PATH.
+  const safe = String(entry.id).replace(/[^a-zA-Z0-9]+/g, "_").toUpperCase();
+  return (
+    process.env[`ZIG_BIN_${safe}`] ||
+    process.env.ZIG ||
+    "zig"
+  );
+}
+
 function writeBuildZon(entry, zigAbsPath) {
   const zigRel = relative(root, zigAbsPath).split("\\").join("/");
+  // hostZig "master" needs a recent nightly; pins use their release number.
+  const minZig =
+    entry.hostZig && entry.hostZig !== "master"
+      ? entry.hostZig
+      : entry.hostZig === "master"
+        ? "0.17.0-dev"
+        : "0.15.2";
   const zon = `.{
     .name = .playground,
     .version = "0.0.0",
     .fingerprint = 0xdc188848360fd988,
-    .minimum_zig_version = "0.15.2",
+    .minimum_zig_version = "${minZig}",
     .dependencies = .{
         .zls = .{
             .url = "${entry.zls.url}",
@@ -200,7 +217,7 @@ function writeBuildZon(entry, zigAbsPath) {
 }
 `;
   writeFileSync(join(root, "build.zig.zon"), zon);
-  console.log(`[${entry.id}] wrote build.zig.zon (zig=${zigRel})`);
+  console.log(`[${entry.id}] wrote build.zig.zon (zig=${zigRel}, min=${minZig})`);
 }
 
 function buildOne(entry, { wasmOpt, dryRun, cacheRoot }) {
@@ -208,23 +225,28 @@ function buildOne(entry, { wasmOpt, dryRun, cacheRoot }) {
     ? entry.zig.path || `(git ${entry.zig.git?.repo}@${entry.zig.git?.ref})`
     : resolveZigTree(entry, cacheRoot);
 
-  const versionString = entry.zigVersionString || entry.id;
-  const zigArgs = [
-    "build",
-    "-Drelease",
-    `-Dzig-version-string=${versionString}`,
-  ];
+  const zigBin = hostZigBinary(entry);
+  // Only pass -Dzig-version-string when pinned; master leaves it unset so git decides.
+  const versionString =
+    entry.zigVersionString === undefined || entry.zigVersionString === null
+      ? null
+      : entry.zigVersionString;
+  const zigArgs = ["build", "-Drelease"];
+  if (versionString) zigArgs.push(`-Dzig-version-string=${versionString}`);
   if (wasmOpt) zigArgs.push("-Dwasm-opt");
 
   console.log(`\n═══ building compiler "${entry.id}" ═══`);
-  console.log(`    zigVersionString=${versionString}`);
-  console.log(`    hostZig=${entry.hostZig || "(runner default)"}`);
+  console.log(`    zigVersionString=${versionString ?? "(from zig git)"}`);
+  console.log(`    hostZig=${entry.hostZig || "(runner default)"} via ${zigBin}`);
   console.log(`    schedule=${entry.schedule || "(none)"}`);
+  console.log(
+    `    sources=${entry.zig.git ? `${entry.zig.git.repo}@${entry.zig.git.ref}` : entry.zig.path}`,
+  );
 
   if (dryRun) {
     console.log(`    zig sources → ${zigTree}`);
     console.log(`    zls → ${entry.zls.url}`);
-    console.log(`    would run: zig ${zigArgs.join(" ")}`);
+    console.log(`    would run: ${zigBin} ${zigArgs.join(" ")}`);
     console.log(`    would package → public/compilers/${entry.id}/`);
     return;
   }
@@ -237,7 +259,7 @@ function buildOne(entry, { wasmOpt, dryRun, cacheRoot }) {
     rmSync(zigOut, { recursive: true, force: true });
   }
 
-  run("zig", zigArgs);
+  run(zigBin, zigArgs);
   run("node", [
     join(root, "scripts/package-compiler.mjs"),
     "--id",
@@ -251,6 +273,8 @@ function buildOne(entry, { wasmOpt, dryRun, cacheRoot }) {
   if (existsSync(metaPath)) {
     const meta = JSON.parse(readFileSync(metaPath, "utf8"));
     meta.zigVersionString = versionString;
+    meta.hostZig = entry.hostZig || null;
+    meta.zigGit = entry.zig.git || null;
     meta.schedule = entry.schedule || null;
     meta.zlsUrl = entry.zls.url;
     meta.label = entry.label || entry.id;

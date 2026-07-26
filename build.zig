@@ -9,7 +9,8 @@ pub fn build(b: *std.Build) void {
 
     const enable_wasm_opt = b.option(bool, "wasm-opt", "Run wasm-opt") orelse false;
     // Driven by versions.json via scripts/build-compilers.mjs (-Dzig-version-string=…).
-    const zig_version_string = b.option([]const u8, "zig-version-string", "Zig version string embedded in wasm") orelse "0.15.2";
+    // Omit for official master so the dependency computes version from its own git.
+    const zig_version_string = b.option([]const u8, "zig-version-string", "Zig version string embedded in wasm");
 
     const zls_step = b.step("zls", "compile and install ZLS");
     const zig_step = b.step("zig", "compile and install Zig");
@@ -24,7 +25,6 @@ pub fn build(b: *std.Build) void {
     const zls_dependency = b.dependency("zls", .{
         .target = target,
         .optimize = optimize,
-        // .@"version-string" = @as([]const u8, "0.17.0-dev"),
     });
 
     const zls_exe = b.addExecutable(.{
@@ -42,13 +42,22 @@ pub fn build(b: *std.Build) void {
     zls_exe.rdynamic = true;
     zls_step.dependOn(installArtifact(b, zls_exe, enable_wasm_opt));
 
-    const zig_dependency = b.dependency("zig", .{
-        .target = target,
-        .optimize = optimize,
-        .@"version-string" = zig_version_string,
-        .@"no-lib" = true,
-        .dev = "wasm",
-    });
+    // version-string is optional: pinned releases set it; master leaves it unset.
+    const zig_dependency = if (zig_version_string) |vs|
+        b.dependency("zig", .{
+            .target = target,
+            .optimize = optimize,
+            .@"version-string" = vs,
+            .@"no-lib" = true,
+            .dev = "wasm",
+        })
+    else
+        b.dependency("zig", .{
+            .target = target,
+            .optimize = optimize,
+            .@"no-lib" = true,
+            .dev = "wasm",
+        });
     zig_step.dependOn(installArtifact(b, zig_dependency.artifact("zig"), enable_wasm_opt));
 
     const lib_compiler_rt = b.addLibrary(.{

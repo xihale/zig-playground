@@ -3,8 +3,8 @@ name: Master compiler (periodic)
 # Rebuild versions.json entries with "schedule" (e.g. master ~every 3 days).
 # Manual: Actions → Master compiler (periodic) → Run workflow
 #
-# Source: ziglang/zig@ref from versions.json + optional patch (not zigtools
-# wasm32-wasi tip — that needs a newer host Zig than 0.15.2).
+# Official Zig development lives on Codeberg (GitHub ziglang/zig master is a stub).
+# hostZig=master (nightly) is required — 0.15.2 cannot evaluate master build.zig.
 
 on:
   schedule:
@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
@@ -26,9 +26,24 @@ jobs:
         with:
           node-version: 22
 
+      - name: Resolve hostZig for scheduled ids
+        id: host
+        run: |
+          set -euo pipefail
+          # Use the first scheduled entry's hostZig (all scheduled should share a host).
+          HOST=$(node --input-type=module -e '
+            import { loadVersionsManifest, selectVersions } from "./scripts/versions-lib.mjs";
+            const m = loadVersionsManifest();
+            const s = selectVersions(m, { select: "scheduled" });
+            if (!s.length) { console.error("no scheduled versions"); process.exit(1); }
+            process.stdout.write(s[0].hostZig || "master");
+          ')
+          echo "version=$HOST" >> "$GITHUB_OUTPUT"
+          echo "hostZig=$HOST"
+
       - uses: mlugg/setup-zig@v2
         with:
-          version: 0.15.2
+          version: ${{ steps.host.outputs.version }}
 
       - name: Install binaryen
         run: |
@@ -38,11 +53,12 @@ jobs:
       - name: Plan (scheduled entries from versions.json)
         run: node scripts/build-compilers.mjs --select scheduled --dry-run
 
-      - name: Build scheduled compilers
+      - name: Build scheduled compilers (official master)
         id: zig_build
         continue-on-error: true
         run: |
           set -euo pipefail
+          zig version
           node scripts/build-compilers.mjs --select scheduled
 
       - name: Fill non-scheduled / missing ids from release
@@ -53,6 +69,24 @@ jobs:
         run: |
           # Do not overwrite freshly built scheduled trees.
           node scripts/fill-compilers-from-release.mjs --require-all
+
+      - name: Publish compilers-latest Release (so Deploy reuses new master)
+        if: steps.zig_build.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          COMPILERS_RELEASE: ${{ vars.COMPILERS_RELEASE || 'compilers-latest' }}
+        run: |
+          set -euo pipefail
+          tar -C public -czf compilers.tar.gz compilers
+          if gh release view "$COMPILERS_RELEASE" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$COMPILERS_RELEASE" compilers.tar.gz --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$COMPILERS_RELEASE" compilers.tar.gz --repo "$GITHUB_REPOSITORY" \
+              --title "Compiler assets (not in git)" \
+              --notes "Prebuilt zig/zls wasm trees for Pages deploy."
+          fi
+          echo "uploaded compilers.tar.gz to $COMPILERS_RELEASE"
 
       - name: Frontend build + assemble
         env:
