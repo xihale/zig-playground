@@ -3,12 +3,38 @@
   "versions": [
     {
       "id": "0.15.2",
-      "label": "0.15.2"
+      "label": "0.15.2",
+      "zigVersionString": "0.15.2",
+      "hostZig": "0.15.2",
+      "zig": {
+        "path": "../zig-wasm",
+        "git": {
+          "repo": "https://github.com/zigtools/zig",
+          "ref": "wasm32-wasi"
+        }
+      },
+      "zls": {
+        "url": "git+https://github.com/zigtools/zls?ref=0.15.1#f91b2e1e305e5d5bd3725aea90f9f9bfb3dce055",
+        "hash": "zls-0.15.1-rmm5fgQ2JADjDh84Ja3pDBZ1io_kKdHS2YhQyvBYz66r"
+      }
     },
     {
       "id": "master",
       "label": "master",
-      "schedule": "3d"
+      "schedule": "3d",
+      "zigVersionString": "0.15.2-dev",
+      "hostZig": "0.15.2",
+      "zig": {
+        "path": "../zig-wasm",
+        "git": {
+          "repo": "https://github.com/zigtools/zig",
+          "ref": "wasm32-wasi"
+        }
+      },
+      "zls": {
+        "url": "git+https://github.com/zigtools/zls?ref=0.15.1#f91b2e1e305e5d5bd3725aea90f9f9bfb3dce055",
+        "hash": "zls-0.15.1-rmm5fgQ2JADjDh84Ja3pDBZ1io_kKdHS2YhQyvBYz66r"
+      }
     }
   ]
 }

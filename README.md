@@ -7,10 +7,10 @@ Run and explore Zig in your browser, with compiler and LSP support built in.
 | Path | Meaning |
 |------|---------|
 | `/` | Configurable default (`versions.json` → `default`) |
-| `/master/` | Tracking build (CI ~every 3 days) |
-| `/0.15.2/` | Pinned release |
+| `/master/` | Tracking build (`schedule: "3d"`, CI + manual) |
+| `/0.15.2/` | Pinned release (no `schedule` → rebuild on deploy) |
 
-Shared UI assets live under `/assets/`. Each compiler (Zig + paired ZLS + std tarball) lives under:
+Shared UI under `/assets/`. Per-version compilers:
 
 ```
 /compilers/<id>/zig.wasm
@@ -19,67 +19,65 @@ Shared UI assets live under `/assets/`. Each compiler (Zig + paired ZLS + std ta
 /compilers/<id>/zig.tar.gz
 ```
 
-**Large binaries are never committed.** Package them locally or in CI; only source + `versions.json` stay in git. Browser ZIR cache is keyed per version id (IndexedDB).
+**Large binaries are never committed.** Browser ZIR cache is keyed per version id.
 
 Design: [`docs/superpowers/specs/2026-07-26-multi-version-compilers-design.md`](docs/superpowers/specs/2026-07-26-multi-version-compilers-design.md)
 
-## Installation
+### How builds are chosen
 
-You can either:
+[`versions.json`](versions.json) is the **build orchestrator**, not only the UI list:
 
-- Use it online: https://playground.zigtools.org/ (upstream) or your Pages deploy
-- Run it locally:
-
-Requires Zig `0.15.2` and a wasm-capable Zig tree at `../zig-wasm` (see `build.zig.zon`). Compiles Zig + ZLS for WebAssembly.
+| Field | Role |
+|-------|------|
+| `default` | `/` resolves to this id |
+| `versions[].id` / `label` | URL path + dropdown |
+| `versions[].schedule` | If set (e.g. `"3d"`), built by periodic/manual **Master** workflow; if absent, built on every **Deploy** |
+| `versions[].zig.path` / `zig.git` | Source for that id (local path preferred) |
+| `versions[].zls.url` / `hash` | Paired ZLS package |
+| `versions[].zigVersionString` | Passed as `-Dzig-version-string` |
 
 ```bash
-zig build -Doptimize=ReleaseSmall
-node scripts/package-compiler.mjs --id 0.15.2
+npm run compilers:plan          # dry-run: who would build
+npm run compilers:stable        # no schedule
+npm run compilers:scheduled     # has schedule (master, …)
+npm run compilers -- --only 0.15.2
+```
+
+## Installation
+
+Requires Zig `0.15.2` and (for local path builds) a wasm-capable tree at `../zig-wasm`.
+
+```bash
+npm run compilers:stable    # reads versions.json → zig build → public/compilers/<id>
 npm install
 npm run dev
 ```
 
-Open `/` or `/0.15.2/`. Switch versions via the toolbar dropdown (full page navigation).
+Open `/` or `/0.15.2/`. Toolbar dropdown does full-page navigation.
 
 ### Production dist
 
 ```bash
-zig build -Doptimize=ReleaseSmall -Dwasm-opt   # optional wasm-opt
-node scripts/package-compiler.mjs --id 0.15.2
-# optionally also package master after a master build:
-# node scripts/package-compiler.mjs --id master
-npm run build   # vite build + assemble-dist (per-id index.html, 404.html)
+npm run compilers:stable    # or :scheduled / --select all
+npm run build               # vite + assemble-dist
 npm run preview
-```
-
-## Version list
-
-Edit [`versions.json`](versions.json):
-
-```json
-{
-  "default": "0.15.2",
-  "versions": [
-    { "id": "0.15.2", "label": "0.15.2" },
-    { "id": "master", "label": "master", "schedule": "3d" }
-  ]
-}
 ```
 
 ## CI
 
-- `deploy.yml` — try source build (`zig build -Drelease`), else download release tag `compilers-latest`; deploy Pages on `main`/`master`
-- `master.yml` — schedule `0 0 */3 * *` rebuilds `master` and redeploys
+| Workflow | Selects from `versions.json` |
+|----------|------------------------------|
+| **Deploy** | `--select stable` (no `schedule`), then `fill-compilers-from-release` for gaps |
+| **Master compiler (periodic)** | `--select scheduled` (~every 3 days + **manual** `workflow_dispatch`), fill stables from release |
 
-**Compiler assets are not in git.** After a local package:
+**Compiler assets are not in git.** Publish a release for fill/fallback:
 
 ```bash
-node scripts/package-compiler.mjs --id 0.15.2
+npm run compilers -- --select all
 tar -C public -czf compilers.tar.gz compilers
-gh release create compilers-latest compilers.tar.gz --notes "wasm trees for CI/Pages"
-# or: gh release upload compilers-latest compilers.tar.gz --clobber
+gh release upload compilers-latest compilers.tar.gz --clobber
 ```
 
-Optional repo variables: `ZIG_WASM_REPO`, `ZIG_WASM_REF`, `COMPILERS_RELEASE`.
+Optional vars: `COMPILERS_RELEASE`, `VITE_BASE`.
 
 Enjoy!

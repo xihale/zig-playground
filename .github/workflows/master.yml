@@ -1,11 +1,10 @@
 name: Master compiler (periodic)
 
-# Rebuild the `master` compiler tree about every 3 days and redeploy Pages.
-# Binaries stay out of git (Pages artifact only).
+# Rebuild versions.json entries with "schedule" (e.g. master ~every 3 days).
+# Manual: Actions → Master compiler (periodic) → Run workflow
 
 on:
   schedule:
-    # 00:00 UTC every 3 days
     - cron: "0 0 */3 * *"
   workflow_dispatch:
 
@@ -15,7 +14,7 @@ permissions:
   id-token: write
 
 jobs:
-  build-master:
+  build-scheduled:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -25,31 +24,30 @@ jobs:
           node-version: 22
 
       - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
 
       - name: Install binaryen
         run: |
           sudo apt-get update
           sudo apt-get install -y binaryen
 
-      - name: Checkout zig master (wasm-capable tree)
-        uses: actions/checkout@v4
-        with:
-          repository: ${{ vars.ZIG_WASM_MASTER_REPO || vars.ZIG_WASM_REPO || 'zigtools/zig' }}
-          ref: ${{ vars.ZIG_WASM_MASTER_REF || 'wasm32-wasi' }}
-          path: zig-wasm-src
+      - name: Plan (scheduled entries from versions.json)
+        run: node scripts/build-compilers.mjs --select scheduled --dry-run
 
-      - name: Link zig-wasm dependency
-        run: |
-          rm -rf "$GITHUB_WORKSPACE/../zig-wasm"
-          ln -sfn "$GITHUB_WORKSPACE/zig-wasm-src" "$GITHUB_WORKSPACE/../zig-wasm"
-
-      - name: Build + package master (+ stable mirror for full Pages tree)
+      - name: Build scheduled compilers
         run: |
           set -euo pipefail
-          zig build -Drelease -Dwasm-opt
-          node scripts/package-compiler.mjs --id master --from zig-out
-          # Full redeploy needs every listed id present under dist/compilers.
-          node scripts/package-compiler.mjs --id 0.15.2 --from zig-out
+          node scripts/build-compilers.mjs --select scheduled
+
+      - name: Fill non-scheduled ids from release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          COMPILERS_RELEASE: ${{ vars.COMPILERS_RELEASE || 'compilers-latest' }}
+        run: |
+          # Do not overwrite freshly built scheduled trees.
+          node scripts/fill-compilers-from-release.mjs --require-all
 
       - name: Frontend build + assemble
         env:

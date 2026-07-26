@@ -11,9 +11,8 @@ permissions:
   pages: write
   id-token: write
 
-# Large wasm/tar never enter git. Prefer:
-#   1) Build from ../zig-wasm when available (CI checkout of wasm-capable Zig)
-#   2) Else download a prebuilt compilers release (COMPILERS_RELEASE tag)
+# Compilers driven by versions.json (scripts/build-compilers.mjs).
+# Binaries never enter git — only Pages / Release artifacts.
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -34,77 +33,31 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y binaryen
 
-      - name: Checkout zig-wasm (compiler source)
-        id: zig_src
-        continue-on-error: true
-        uses: actions/checkout@v4
-        with:
-          repository: ${{ vars.ZIG_WASM_REPO || 'zigtools/zig' }}
-          ref: ${{ vars.ZIG_WASM_REF || 'wasm32-wasi' }}
-          path: zig-wasm-src
+      - name: Plan (stable entries from versions.json)
+        run: node scripts/build-compilers.mjs --select stable --dry-run
 
-      - name: Link zig-wasm dependency
-        if: steps.zig_src.outcome == 'success'
-        run: |
-          ln -sfn "$GITHUB_WORKSPACE/zig-wasm-src" "$GITHUB_WORKSPACE/../zig-wasm"
-          ls -la "$GITHUB_WORKSPACE/../zig-wasm" | head
-
-      - name: Build wasm compilers from source
+      - name: Build stable compilers (versions.json, no schedule)
         id: zig_build
         continue-on-error: true
         run: |
           set -euo pipefail
-          if [ ! -d "$GITHUB_WORKSPACE/../zig-wasm" ]; then
-            echo "no zig-wasm tree"
-            exit 1
-          fi
-          # Zig 0.15 preferred_optimize_mode → -Drelease (not -Doptimize)
-          zig build -Drelease -Dwasm-opt
-          node scripts/package-compiler.mjs --id 0.15.2 --from zig-out
-          node scripts/package-compiler.mjs --id master --from zig-out
+          node scripts/build-compilers.mjs --select stable
 
-      - name: Download prebuilt compilers (fallback)
-        if: steps.zig_build.outcome != 'success'
+      - name: Fill missing ids from release (e.g. master)
         env:
           GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          COMPILERS_RELEASE: ${{ vars.COMPILERS_RELEASE || 'compilers-latest' }}
         run: |
-          set -euo pipefail
-          TAG="${{ vars.COMPILERS_RELEASE || 'compilers-latest' }}"
-          echo "Source build failed or skipped — fetching release assets: $TAG"
-          mkdir -p public/compilers /tmp/compilers-release
-          gh release download "$TAG" --repo "${{ github.repository }}" --dir /tmp/compilers-release || {
-            echo "::error::No source build and no release '$TAG'. Create a release with packaged compilers (see README)."
-            exit 1
-          }
-          # Prefer compilers.tar.gz (public/compilers layout); else copy trees.
-          if [ -f /tmp/compilers-release/compilers.tar.gz ]; then
-            tar -xzf /tmp/compilers-release/compilers.tar.gz -C public
-          elif [ -d /tmp/compilers-release/compilers ]; then
-            cp -a /tmp/compilers-release/compilers/. public/compilers/
-          elif [ -d /tmp/compilers-release/0.15.2 ]; then
-            cp -a /tmp/compilers-release/. public/compilers/
-          else
-            mkdir -p public/compilers/0.15.2 public/compilers/master
-            cp -a /tmp/compilers-release/. public/compilers/0.15.2/ || true
-            # Per-id tarballs
-            for t in /tmp/compilers-release/*.tar.gz; do
-              [ -f "$t" ] || continue
-              base=$(basename "$t" .tar.gz)
-              [ "$base" = "compilers" ] && continue
-              mkdir -p "public/compilers/$base"
-              tar -xzf "$t" -C "public/compilers/$base" --strip-components=1 2>/dev/null \
-                || tar -xzf "$t" -C public/compilers
-            done
-            if [ ! -d public/compilers/master ] && [ -d public/compilers/0.15.2 ]; then
-              cp -a public/compilers/0.15.2/. public/compilers/master/
-            fi
-          fi
-          test -f public/compilers/0.15.2/zig.wasm
-          ls -laR public/compilers | head -40
+          node scripts/fill-compilers-from-release.mjs --require-stable
+
+      - name: Require default compiler
+        run: |
+          DEFAULT=$(node -p "require('./versions.json').default")
+          test -f "public/compilers/${DEFAULT}/zig.wasm"
 
       - name: Frontend build + assemble multi-version dist
         env:
-          # Project Pages: https://xihale.github.io/zig-playground/
           VITE_BASE: ${{ vars.VITE_BASE || '/zig-playground/' }}
         run: |
           npm ci

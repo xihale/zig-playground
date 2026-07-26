@@ -8,7 +8,7 @@
  *   node scripts/package-compiler.mjs --id 0.15.2 --from zig-out --to public/compilers/0.15.2
  */
 
-import { cpSync, mkdirSync, writeFileSync, statSync, existsSync, readFileSync } from "node:fs";
+import { cpSync, mkdirSync, writeFileSync, statSync, existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 

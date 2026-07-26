@@ -8,6 +8,8 @@ pub fn build(b: *std.Build) void {
     const optimize: std.builtin.OptimizeMode = b.standardOptimizeOption(.{ .preferred_optimize_mode = .ReleaseSmall });
 
     const enable_wasm_opt = b.option(bool, "wasm-opt", "Run wasm-opt") orelse false;
+    // Driven by versions.json via scripts/build-compilers.mjs (-Dzig-version-string=…).
+    const zig_version_string = b.option([]const u8, "zig-version-string", "Zig version string embedded in wasm") orelse "0.15.2";
 
     const zls_step = b.step("zls", "compile and install ZLS");
     const zig_step = b.step("zig", "compile and install Zig");
@@ -43,7 +45,7 @@ pub fn build(b: *std.Build) void {
     const zig_dependency = b.dependency("zig", .{
         .target = target,
         .optimize = optimize,
-        .@"version-string" = @as([]const u8, "0.15.2"),
+        .@"version-string" = zig_version_string,
         .@"no-lib" = true,
         .dev = "wasm",
     });
