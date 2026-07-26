@@ -385,67 +385,38 @@ main {
     overflow: hidden;
 }
 
-/* Shell around the scrollport. Keeps floating status (embed) pinned to
-   the pane while long lines scroll underneath. */
-#output-wrap {
-    flex: 1 1 auto;
-    min-width: 0;
-    min-height: 0;
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    background-color: var(--output-background);
-}
-
+/* Scrollport only. Padding cannot live here: overflow scrollports drop
+   end-padding when children overflow on the inline axis. */
 #output-container {
     flex: 1 1 auto;
-    /* Shrink inside flex so long pre lines scroll here, not expand the pane. */
     min-width: 0;
     min-height: 0;
-    overflow-x: auto;
-    overflow-y: auto;
-    /* No horizontal padding here — scroll containers clip end-padding.
-       Inset lives on the children so left/right stay visible while scrolling. */
-    padding: 0;
-    box-sizing: border-box;
+    overflow: auto;
+    background-color: var(--output-background);
     color: var(--output-text);
 }
 
-#output-container > .zig-output,
-#output-container > .runner-output {
-    /* Preserve program output exactly — no wrap (would change layout). */
+/* Single pad box: shrink-wraps long pre lines, still fills the pane when
+   short. Padding is on this box so left/right inset scrolls with content. */
+#output-pad {
+    display: inline-block;
+    min-width: 100%;
+    box-sizing: border-box;
+    padding: 1rem 1.25rem;
+    vertical-align: top;
+}
+
+#output-pad > .zig-output,
+#output-pad > .runner-output {
     white-space: pre;
     font-family: var(--editor-font-mono);
     font-size: var(--editor-font-size);
     line-height: var(--editor-line-height);
     margin: 0;
     color: var(--output-text);
-    /* content-box so horizontal padding sits *outside* the text measure.
-       width:max-content grows with long lines; min-width fills short ones
-       without always forcing a horizontal scrollbar
-       (100% − left/right padding). Scroll extent includes the inset, so
-       glyphs never kiss the pane edge at either end. */
-    display: block;
-    box-sizing: content-box;
-    width: max-content;
-    min-width: calc(100% - 2.5rem);
-    padding: 0 1.25rem;
 }
 
-/* Vertical inset on first/last block (container padding would not ride
-   the horizontal scroll end either). */
-#output-container > .zig-output:first-child,
-#output-container > .runner-output:first-child {
-    padding-top: 1rem;
-}
-#output-container > .zig-output:last-child,
-#output-container > .runner-output:last-child {
-    padding-bottom: 1rem;
-}
-
-/* Compile diagnostics read as an error surface. */
-#output-container > .zig-output {
+#output-pad > .zig-output {
     color: var(--status-err);
 }
 
@@ -522,8 +493,7 @@ body.embed #preview-pane {
     position: relative;
 }
 
-/* Status chip reparented onto #output-wrap in embed mode (outside the
-   scrollport) so it stays top-right while output scrolls. */
+/* Floated onto #preview-pane (not the scrollport) so it stays pinned. */
 #run-status.embed-status {
     position: absolute;
     top: 0.45rem;

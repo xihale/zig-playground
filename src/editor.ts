@@ -314,6 +314,7 @@ exampleSelect.addEventListener("change", () => {
 // the preview toolbar — not in the text stream.
 
 const outputContainer = document.getElementById("output-container")!;
+const outputPad = document.getElementById("output-pad")!;
 const runStatus = document.getElementById("run-status")!;
 const statusText = document.getElementById("status-text")!;
 
@@ -350,10 +351,9 @@ function setStatus(status: Status) {
 
 /** Wipe the output area for a fresh run. */
 function clearOutput() {
-  outputContainer.replaceChildren();
+  outputPad.replaceChildren();
   compileBlock = null;
   runBlock = null;
-  // Fresh run: show the start of each line (padding provides the inset).
   outputContainer.scrollLeft = 0;
 }
 
@@ -367,7 +367,7 @@ function appendCompile(text: string) {
   if (!compileBlock) {
     compileBlock = document.createElement("div");
     compileBlock.className = "zig-output";
-    outputContainer.appendChild(compileBlock);
+    outputPad.appendChild(compileBlock);
   }
   compileBlock.textContent += text;
   scrollOutput();
@@ -386,7 +386,7 @@ function appendRun(text: string) {
   if (!runBlock) {
     runBlock = document.createElement("div");
     runBlock.className = "runner-output";
-    outputContainer.appendChild(runBlock);
+    outputPad.appendChild(runBlock);
   }
   runBlock.textContent += text;
   scrollOutput();
@@ -733,12 +733,10 @@ if (!embedConfig.embed) {
   });
 }
 
-// Embed: float status over the output pane (toolbars are hidden).
-// Mount on #output-wrap (not the scrollport) so exit code stays pinned
-// top-right while long lines scroll underneath.
+// Embed: float status on the pane (outside the scrollport) so exit code
+// stays top-right while long lines scroll underneath.
 if (embedConfig.embed) {
-  const outputWrap = document.getElementById("output-wrap")!;
-  outputWrap.appendChild(runStatus);
+  document.getElementById("preview-pane")!.appendChild(runStatus);
   runStatus.classList.add("embed-status");
 }
 
