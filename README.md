@@ -10,7 +10,7 @@ Run and explore Zig in your browser, with compiler and LSP support built in.
 |------|---------|
 | `/` | Configurable default (`versions.json` → `default`) |
 | `/master/` | Tracking build (`schedule: "3d"`, CI + manual) |
-| `/0.15.2/` | Pinned release (no `schedule` → rebuild on deploy) |
+| `/0.15.2/` | Pinned release (binaries from Release; rebuild only when forced/missing) |
 
 Shared UI under `/assets/`. Per-version compilers:
 
@@ -33,10 +33,13 @@ Design: [`docs/superpowers/specs/2026-07-26-multi-version-compilers-design.md`](
 |-------|------|
 | `default` | `/` resolves to this id |
 | `versions[].id` / `label` | URL path + dropdown |
-| `versions[].schedule` | If set (e.g. `"3d"`), built by periodic/manual **Master** workflow; if absent, built on every **Deploy** |
-| `versions[].zig.path` / `zig.git` | Source for that id (local path preferred) |
+| `versions[].schedule` | If set (e.g. `"3d"`), rebuilt by periodic/manual **Master** workflow |
+| `versions[].zig.path` / `zig.git` | Source for that id (local path preferred; else clone `git.ref`) |
+| `versions[].zig.patch` | Optional repo-relative patch applied after clone (CI) |
 | `versions[].zls.url` / `hash` | Paired ZLS package |
 | `versions[].zigVersionString` | Passed as `-Dzig-version-string` |
+
+**Important:** source builds use `ziglang/zig@0.15.2` + `patches/zig-0.15.2-playground-wasm.patch`. Do **not** point git at `zigtools/zig@wasm32-wasi` with host Zig 0.15.2 — that branch is 0.16-era and fails with `use_new_linker` / `b.graph.io` errors.
 
 ```bash
 npm run compilers:plan          # dry-run: who would build
@@ -69,10 +72,10 @@ npm run preview
 
 | Workflow | When compilers are built |
 |----------|---------------------------|
-| **Deploy** (every push) | **Does not rebuild by default.** Downloads `compilers-latest` Release and only builds frontend. Rebuilds wasm only if `versions.json` / `build.zig*` / compiler scripts changed, or you manually **Run workflow → rebuild_compilers**. |
-| **Master compiler** | Builds entries with `schedule` (~every 3 days + **manual**). Stables come from Release. |
+| **Deploy** (every push) | **Reuses Release.** Downloads `compilers-latest` → only builds frontend. Source rebuild only if packages missing after download, or **Run workflow → rebuild_compilers**. |
+| **Master compiler** | Builds entries with `schedule` (~every 3 days + **manual**). Other ids filled from Release. |
 
-So: **compile once, upload Release, reuse forever** until you change the version list or force rebuild.
+So: **compile once, upload Release, reuse forever** until you force rebuild or the release is incomplete.
 
 ```bash
 # One-time (or when upgrading a pin): produce + publish binaries

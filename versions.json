@@ -9,9 +9,10 @@
       "zig": {
         "path": "../zig-wasm",
         "git": {
-          "repo": "https://github.com/zigtools/zig",
-          "ref": "wasm32-wasi"
-        }
+          "repo": "https://github.com/ziglang/zig",
+          "ref": "0.15.2"
+        },
+        "patch": "patches/zig-0.15.2-playground-wasm.patch"
       },
       "zls": {
         "url": "git+https://github.com/zigtools/zls?ref=0.15.1#f91b2e1e305e5d5bd3725aea90f9f9bfb3dce055",
@@ -27,9 +28,10 @@
       "zig": {
         "path": "../zig-wasm",
         "git": {
-          "repo": "https://github.com/zigtools/zig",
-          "ref": "wasm32-wasi"
-        }
+          "repo": "https://github.com/ziglang/zig",
+          "ref": "0.15.2"
+        },
+        "patch": "patches/zig-0.15.2-playground-wasm.patch"
       },
       "zls": {
         "url": "git+https://github.com/zigtools/zls?ref=0.15.1#f91b2e1e305e5d5bd3725aea90f9f9bfb3dce055",

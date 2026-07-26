@@ -17,23 +17,44 @@ permissions:
   id-token: write
 
 # Frontend deploys on every push.
-# Compilers are REUSED from GitHub Release `compilers-latest` — not rebuilt every commit.
-# Rebuild only when:
-#   - release is missing an id listed in versions.json, or
+# Compilers are REUSED from GitHub Release `compilers-latest` by default.
+# Source rebuild only when:
 #   - workflow_dispatch with rebuild_compilers=true, or
-#   - compiler-related paths changed (versions.json / build.zig* / build scripts)
+#   - release is missing an id listed in versions.json
+#
+# Source builds use ziglang/zig@0.15.2 + patches/ (see versions.json).
+# Do NOT clone zigtools/zig@wasm32-wasi with host 0.15.2 — Build API mismatch.
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+
+      - name: Download compilers from Release (reuse)
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          COMPILERS_RELEASE: ${{ vars.COMPILERS_RELEASE || 'compilers-latest' }}
+        run: |
+          set -euo pipefail
+          TAG="${COMPILERS_RELEASE}"
+          mkdir -p public/compilers .zig-version-cache/release-download
+          if gh release download "$TAG" --repo "$GITHUB_REPOSITORY" \
+              --dir .zig-version-cache/release-download --clobber \
+              --pattern 'compilers.tar.gz' 2>/dev/null; then
+            tar -xzf .zig-version-cache/release-download/compilers.tar.gz -C public
+            echo "extracted compilers.tar.gz from $TAG"
+          else
+            echo "no compilers.tar.gz on $TAG — trying fill script"
+            node scripts/fill-compilers-from-release.mjs || true
+          fi
+          ls -la public/compilers || true
 
       - name: Detect whether a source compiler rebuild is needed
         id: need
@@ -43,57 +64,26 @@ jobs:
           set -euo pipefail
           if [ "$FORCE" = "true" ]; then
             echo "rebuild=true" >> "$GITHUB_OUTPUT"
-            echo "reason=manual workflow_dispatch rebuild_compilers"
+            echo "reason=manual workflow_dispatch rebuild_compilers" | tee -a "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
 
-          # Paths that actually change wasm/zls packaging
-          PATTERN='^(versions\.json|build\.zig|build\.zig\.zon|src/zls\.zig|scripts/(build-compilers|package-compiler|versions-lib|fill-compilers).*)$'
-          CHANGED=""
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            BASE="${{ github.event.pull_request.base.sha }}"
-            HEAD="${{ github.event.pull_request.head.sha }}"
-            CHANGED=$(git diff --name-only "$BASE" "$HEAD" || true)
-          elif [ "${{ github.event_name }}" = "push" ]; then
-            BEFORE="${{ github.event.before }}"
-            # first push / force: before is zeros
-            if [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
-              CHANGED=$(git show --name-only --pretty='' HEAD || true)
-            else
-              CHANGED=$(git diff --name-only "$BEFORE" HEAD || true)
-            fi
-          fi
-
-          if echo "$CHANGED" | grep -qE "$PATTERN"; then
+          MISSING=$(node --input-type=module -e '
+            import { loadVersionsManifest } from "./scripts/versions-lib.mjs";
+            import { existsSync } from "node:fs";
+            import { join } from "node:path";
+            const m = loadVersionsManifest();
+            const miss = m.versions.filter(v => !existsSync(join("public/compilers", v.id, "zig.wasm")));
+            process.stdout.write(miss.map(v => v.id).join(" "));
+          ')
+          if [ -n "${MISSING// }" ]; then
             echo "rebuild=true" >> "$GITHUB_OUTPUT"
-            echo "reason=compiler-related paths changed:"
-            echo "$CHANGED" | grep -E "$PATTERN" || true
+            echo "reason=missing packages after release download: $MISSING" | tee -a "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
 
           echo "rebuild=false" >> "$GITHUB_OUTPUT"
-          echo "reason=reuse Release compilers (no compiler path changes)"
-
-      - name: Download compilers from Release (reuse)
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          COMPILERS_RELEASE: ${{ vars.COMPILERS_RELEASE || 'compilers-latest' }}
-        run: |
-          set -euo pipefail
-          # Prefer full extract of compilers.tar.gz when present.
-          TAG="${COMPILERS_RELEASE}"
-          mkdir -p public/compilers .zig-version-cache/release-download
-          if gh release download "$TAG" --repo "$GITHUB_REPOSITORY" \
-              --dir .zig-version-cache/release-download --clobber \
-              --pattern 'compilers.tar.gz' 2>/dev/null; then
-            tar -xzf .zig-version-cache/release-download/compilers.tar.gz -C public
-            echo "extracted compilers.tar.gz from $TAG"
-          else
-            # Fallback: fill missing only (older release layouts)
-            node scripts/fill-compilers-from-release.mjs || true
-          fi
-          ls -la public/compilers || true
+          echo "reason=reuse Release compilers (all versions.json ids present)" | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Install Zig + binaryen (only if rebuilding)
         if: steps.need.outputs.rebuild == 'true'
@@ -107,13 +97,19 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y binaryen
 
-      - name: Rebuild stable compilers from source
+      - name: Rebuild compilers from source
         if: steps.need.outputs.rebuild == 'true'
+        id: zig_build
+        continue-on-error: true
         run: |
           set -euo pipefail
           echo "rebuild reason: ${{ steps.need.outputs.reason }}"
-          # Overwrite packaged trees for stable ids (release was only a starting point).
-          node scripts/build-compilers.mjs --select stable
+          # Builds every id that is still missing, or all stable when forced.
+          if [ "${{ github.event_name == 'workflow_dispatch' && inputs.rebuild_compilers || false }}" = "true" ]; then
+            node scripts/build-compilers.mjs --select all
+          else
+            node scripts/build-compilers.mjs --select all --skip-existing
+          fi
 
       - name: Ensure every versions.json id is packaged
         run: |
@@ -127,11 +123,13 @@ jobs:
             process.stdout.write(miss.map(v => v.id).join(" "));
           ')
           if [ -z "${MISSING// }" ]; then
-            echo "all versions.json ids present — no zig build needed"
+            echo "all versions.json ids present"
+            ls public/compilers
             exit 0
           fi
           echo "::error::Missing compiler packages: $MISSING"
-          echo "Upload a compilers-latest release (compilers.tar.gz), or re-run Deploy with rebuild_compilers=true."
+          echo "Upload compilers-latest (compilers.tar.gz), or Run workflow with rebuild_compilers=true."
+          echo "Note: source builds need ziglang/zig@0.15.2 + patches/ (not zigtools/zig@wasm32-wasi)."
           exit 1
 
       - name: Require default compiler

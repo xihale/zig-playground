@@ -112,19 +112,42 @@ function ensureDir(p) {
   mkdirSync(p, { recursive: true });
 }
 
+/** Apply optional repo-relative patch after a clean checkout of git.ref. */
+function applyZigPatch(entry, dest) {
+  const patchRel = entry.zig.patch;
+  if (!patchRel) return;
+  const patchAbs = join(root, patchRel);
+  if (!existsSync(patchAbs)) {
+    throw new Error(`[${entry.id}] zig.patch missing: ${patchRel}`);
+  }
+  // Clean tree for the pinned ref, then apply. Re-runs are idempotent via
+  // git apply (already-applied patches fail check → skip).
+  const check = spawnSync("git", ["-C", dest, "apply", "--check", patchAbs], {
+    encoding: "utf8",
+  });
+  if (check.status === 0) {
+    console.log(`[${entry.id}] applying ${patchRel}`);
+    run("git", ["-C", dest, "apply", patchAbs]);
+  } else {
+    console.log(`[${entry.id}] patch already applied or not needed: ${patchRel}`);
+  }
+}
+
 /** Clone or update a shallow checkout for this version id. */
 function ensureGitZig(entry, cacheRoot) {
   const { repo, ref } = entry.zig.git;
   const dest = join(cacheRoot, entry.id, "zig");
   if (existsSync(join(dest, "build.zig"))) {
     console.log(`[${entry.id}] reusing git cache ${dest}`);
-    // Best-effort update when ref is a branch name
+    // Reset to the pinned ref (tag/branch/sha) so patches re-apply cleanly.
     try {
       run("git", ["-C", dest, "fetch", "--depth", "1", "origin", ref]);
-      run("git", ["-C", dest, "checkout", "FETCH_HEAD"]);
+      run("git", ["-C", dest, "checkout", "-f", "FETCH_HEAD"]);
+      run("git", ["-C", dest, "clean", "-fd"]);
     } catch {
       console.warn(`[${entry.id}] git update skipped (using existing tree)`);
     }
+    applyZigPatch(entry, dest);
     return dest;
   }
   ensureDir(join(cacheRoot, entry.id));
@@ -141,6 +164,7 @@ function ensureGitZig(entry, cacheRoot) {
     run("git", ["-C", dest, "fetch", "--depth", "1", "origin", ref]);
     run("git", ["-C", dest, "checkout", "FETCH_HEAD"]);
   }
+  applyZigPatch(entry, dest);
   return dest;
 }
 

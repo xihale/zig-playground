@@ -1,0 +1,43 @@
+From b810334b034466365952bbbf6fee1d93f7392ac2 Mon Sep 17 00:00:00 2001
+From: xihale <xihale@local>
+Date: Fri, 24 Jul 2026 21:10:08 +0800
+Subject: [PATCH] dev: configure .wasm flavor for browser playground
+
+Reduce the wasm dev flavor to a minimal feature set that compiles and
+runs under wasm32-wasi without the self_exe_path serve() path (which is
+broken on wasi). Verified end-to-end: zig.wasm compiles user code to
+wasm, runnable via wasmtime/WASI shim.
+
+Feature set: wasm_backend + wasm_linker + legalize + build_exe/build_obj
++ sema + ast_gen. Excludes stdio_listen/incremental/test/run (those
+trigger the wasi-broken serve path).
+---
+ src/dev.zig | 9 ++++++---
+ 1 file changed, 6 insertions(+), 3 deletions(-)
+
+diff --git a/src/dev.zig b/src/dev.zig
+index ac30cedecd..9cf4b47217 100644
+--- a/src/dev.zig
++++ b/src/dev.zig
+@@ -196,12 +196,15 @@ pub const Env = enum {
+                 else => Env.sema.supports(feature),
+             },
+             .wasm => switch (feature) {
+-                .stdio_listen,
+-                .incremental,
+                 .wasm_backend,
+                 .wasm_linker,
++                .legalize,
++                .build_exe_command,
++                .build_obj_command,
++                .sema,
++                .ast_gen,
+                 => true,
+-                else => Env.sema.supports(feature),
++                else => false,
+             },
+             .@"x86_64-linux" => switch (feature) {
+                 .build_command,
+-- 
+2.55.0
+

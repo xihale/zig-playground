@@ -2,6 +2,9 @@ name: Master compiler (periodic)
 
 # Rebuild versions.json entries with "schedule" (e.g. master ~every 3 days).
 # Manual: Actions → Master compiler (periodic) → Run workflow
+#
+# Source: ziglang/zig@ref from versions.json + optional patch (not zigtools
+# wasm32-wasi tip — that needs a newer host Zig than 0.15.2).
 
 on:
   schedule:
@@ -36,11 +39,13 @@ jobs:
         run: node scripts/build-compilers.mjs --select scheduled --dry-run
 
       - name: Build scheduled compilers
+        id: zig_build
+        continue-on-error: true
         run: |
           set -euo pipefail
           node scripts/build-compilers.mjs --select scheduled
 
-      - name: Fill non-scheduled ids from release
+      - name: Fill non-scheduled / missing ids from release
         env:
           GH_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
