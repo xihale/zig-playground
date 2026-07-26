@@ -430,8 +430,9 @@ function appendRun(text: string) {
 /** True once zig worker has finished fetching/compiling compiler assets. */
 let compilerReady = false;
 
+// Path = version: `/` → default, `/0.15.2/` → 0.15.2, `/master/` → master.
+// Only that tree is fetched; other ids stay untouched until navigation.
 let zigWorker = new ZigWorker();
-// Load /compilers/<id>/… for this path; ZLS uses the same paired tree.
 zigWorker.postMessage({ init: { versionId: playgroundVersion.id } });
 initZls(playgroundVersion.id);
 
@@ -770,9 +771,8 @@ if (embedConfig.embed) {
   runStatus.classList.add("embed-status");
 }
 
-// First paint: show loading while the worker fetches zig.wasm / std;
-// the initial example is queued and only compiles after { ready: true }.
-// Embed can opt out with autorun=0 (still shows the editor).
+// First paint: loading while this path's zig.wasm / std warm;
+// initial example runs after { ready: true }. Embed: autorun=0 stays idle.
 setStatus({ kind: "loading" });
 if (embedConfig.autorun) {
   runCode();

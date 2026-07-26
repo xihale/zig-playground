@@ -101,3 +101,86 @@ export function compilerAssetBase(versionId: string): string {
 export function compilerAssetUrl(versionId: string, file: string): string {
   return `${compilerAssetBase(versionId)}${file}`;
 }
+
+/**
+ * HTTP Cache-Control for `/compilers/<id>/*` (vite preview / hosts that honor it).
+ *
+ * Client Cache Storage (`compiler-cache.ts`) keys large assets by `meta.builtAt`.
+ * Meta is re-probed on a timer — for rolling trees, half of `schedule` (master
+ * `3d` → recheck every ~1.5d), not on every page load.
+ *
+ * - Stable pins (no `schedule`): long-lived + immutable
+ * - Rolling ids (`schedule: "3d"`): a few days, not immutable (same path rebuilds)
+ */
+export type CompilerCachePolicy =
+  | { kind: "immutable"; maxAgeSeconds: number }
+  | { kind: "max-age"; maxAgeSeconds: number };
+
+const STABLE_MAX_AGE_SECONDS = 365 * 24 * 60 * 60; // 1y ≈ permanent for release trees
+const DEFAULT_ROLLING_SECONDS = 3 * 24 * 60 * 60; // 3d
+
+/** Parse `versions.json` schedule strings like `3d`, `12h`, `90m`. */
+export function parseScheduleSeconds(schedule: string): number {
+  const m = /^(\d+)\s*([dhms])$/i.exec(schedule.trim());
+  if (!m) return DEFAULT_ROLLING_SECONDS;
+  const n = Number(m[1]);
+  switch (m[2].toLowerCase()) {
+    case "d":
+      return n * 86400;
+    case "h":
+      return n * 3600;
+    case "m":
+      return n * 60;
+    case "s":
+      return n;
+    default:
+      return DEFAULT_ROLLING_SECONDS;
+  }
+}
+
+export function compilerCachePolicy(versionId: string): CompilerCachePolicy {
+  const entry = loadVersionsManifest().versions.find((v) => v.id === versionId);
+  if (entry?.schedule) {
+    return { kind: "max-age", maxAgeSeconds: parseScheduleSeconds(entry.schedule) };
+  }
+  return { kind: "immutable", maxAgeSeconds: STABLE_MAX_AGE_SECONDS };
+}
+
+/**
+ * How often to re-fetch `meta.json` for a version id.
+ * Rolling: half the rebuild schedule (catch updates mid-cycle without every visit).
+ * Stable: same as long max-age (repackage of a pin is rare).
+ *
+ * Only runs when this path's version assets are fetched (e.g. never for master
+ * while the user stays on `/` or `/0.15.2/`).
+ */
+export function metaRevalidateSeconds(versionId: string): number {
+  const entry = loadVersionsManifest().versions.find((v) => v.id === versionId);
+  if (entry?.schedule) {
+    return Math.max(60, Math.floor(parseScheduleSeconds(entry.schedule) / 2));
+  }
+  return STABLE_MAX_AGE_SECONDS;
+}
+
+/** `Cache-Control` value for a compiler tree (preview server / future hosts that honor it). */
+export function compilerCacheControlHeader(versionId: string): string {
+  const p = compilerCachePolicy(versionId);
+  if (p.kind === "immutable") {
+    return `public, max-age=${p.maxAgeSeconds}, immutable`;
+  }
+  // Rolling trees rewrite the same URL — do not mark immutable.
+  return `public, max-age=${p.maxAgeSeconds}`;
+}
+
+/** Extract version id from `/compilers/<id>/…` (absolute or site-relative). */
+export function compilerIdFromAssetUrl(href: string): string | null {
+  try {
+    const path = href.includes("://")
+      ? new URL(href).pathname
+      : href.split("?")[0] ?? href;
+    const m = path.match(/\/compilers\/([^/]+)\//);
+    return m?.[1] ?? null;
+  } catch {
+    return null;
+  }
+}

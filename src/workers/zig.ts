@@ -185,6 +185,7 @@ onmessage = (event) => {
         cacheContents.clear();
         lastSavedBytes = 0;
         readyPromise = null;
+        // Warm only the active path version (other ids never fetched this session).
         startWarm();
         return;
     }

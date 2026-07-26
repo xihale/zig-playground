@@ -1,10 +1,11 @@
 import { untar } from "@andrewbranch/untar.js";
 import { Directory, File, ConsoleStdout, wasi as wasi_defs } from "@bjorn3/browser_wasi_shim";
+import { fetchCompilerResponse } from "./compiler-cache";
 import { compilerAssetUrl } from "./version";
 
 export async function fetchAssetBuffer(url: URL | string): Promise<ArrayBuffer> {
     const href = typeof url === "string" ? url : url.href;
-    const response = await fetch(href);
+    const response = await fetchCompilerResponse(href);
     if (!response.ok) {
         throw new Error(`fetch ${href}: HTTP ${response.status}`);
     }
@@ -13,11 +14,13 @@ export async function fetchAssetBuffer(url: URL | string): Promise<ArrayBuffer> 
 
 export async function compileWasmAsset(url: URL | string): Promise<WebAssembly.Module> {
     const href = typeof url === "string" ? url : url.href;
-    // Content-hashed build assets + Cache-Control handle caching; no Cache Storage layer.
-    const response = await fetch(href);
+    // Compiler trees: Cache Storage (GHP ignores long Cache-Control). Hashed UI chunks
+    // still rely on the normal HTTP cache.
+    const response = await fetchCompilerResponse(href);
     if (!response.ok) {
         throw new Error(`fetch ${href}: HTTP ${response.status}`);
     }
+    // compileStreaming needs a body stream; Response from Cache Storage works.
     return WebAssembly.compileStreaming(response);
 }
 
@@ -27,7 +30,7 @@ export async function getZigArchive(versionId: string): Promise<Directory> {
 }
 
 async function loadZigArchive(tarUrl: string): Promise<Directory> {
-    const response = await fetch(tarUrl);
+    const response = await fetchCompilerResponse(tarUrl);
     if (!response.ok) {
         throw new Error(`fetch ${tarUrl}: HTTP ${response.status}`);
     }

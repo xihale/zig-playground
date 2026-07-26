@@ -218,14 +218,10 @@ main {
     height: auto;
     max-width: 16rem;
     margin: 0;
-    padding: 0.2rem 1.35rem 0.2rem 0;
+    padding: 0.2rem 0;
     border: none;
     border-radius: 0;
-    background-color: transparent;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%237d8187' d='M1 1l4 4 4-4'/%3E%3C/svg%3E");
-    background-repeat: no-repeat;
-    background-position: right 0.1rem center;
-    background-size: 0.55rem;
+    background: transparent;
     color: var(--body-mid);
     font-size: 0.85rem;
     font-family: var(--editor-font-mono);
@@ -245,7 +241,6 @@ main {
 #example-select:focus {
     color: var(--ink);
     outline: none;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%23ffffff' d='M1 1l4 4 4-4'/%3E%3C/svg%3E");
 }
 #version-select option,
 #example-select option {
