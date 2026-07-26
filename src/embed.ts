@@ -110,7 +110,10 @@ export function buildIframeSnippet(
   const height = opts.height ?? 400;
   // Escape & for attribute safety (URL already encodes other chars).
   const safeSrc = src.replace(/&/g, "&amp;");
-  return `<iframe src="${safeSrc}" width="100%" height="${height}" loading="lazy" style="border:0;border-radius:0"></iframe>`;
+  // border:0 kills the default frame; outline:none kills the focus ring the
+  // host browser draws on the <iframe> element itself (visible as a white
+  // border after the iframe gains focus, esp. in Firefox/Safari).
+  return `<iframe src="${safeSrc}" width="100%" height="${height}" loading="lazy" style="border:0;border-radius:0;outline:none"></iframe>`;
 }
 
 export function parseEmbedConfig(): EmbedConfig {
