@@ -4,6 +4,8 @@ Run and explore Zig in your browser, with compiler and LSP support built in.
 
 ## Multi-version compilers
 
+**Site:** https://zp.xihale.top/
+
 | Path | Meaning |
 |------|---------|
 | `/` | Configurable default (`versions.json` → `default`) |
@@ -78,6 +80,8 @@ tar -C public -czf compilers.tar.gz compilers
 gh release upload compilers-latest compilers.tar.gz --clobber
 ```
 
-Optional vars: `COMPILERS_RELEASE`, `VITE_BASE`.
+Optional vars: `COMPILERS_RELEASE`, `VITE_BASE` (default `/` for zp.xihale.top).
+
+Custom domain: `public/CNAME` → `zp.xihale.top` (copied into Pages dist).
 
 Enjoy!

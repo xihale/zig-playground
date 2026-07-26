@@ -48,7 +48,7 @@ export function loadVersionsManifest(): VersionsManifest {
   return bundledManifest;
 }
 
-/** Strip Vite/GitHub Pages base (`/zig-playground/`) so the first remaining segment can be a version id. */
+/** Strip Vite deploy base (usually `/`; subpath only if VITE_BASE is set) so the first remaining segment can be a version id. */
 function pathAfterBase(pathname: string): string {
   const base = import.meta.env.BASE_URL || "/";
   if (base === "/") return pathname;

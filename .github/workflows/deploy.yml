@@ -58,7 +58,9 @@ jobs:
 
       - name: Frontend build + assemble multi-version dist
         env:
-          VITE_BASE: ${{ vars.VITE_BASE || '/zig-playground/' }}
+          # Custom domain zp.xihale.top serves at site root (base=/).
+          # Override with repo var VITE_BASE only if you need a subpath again.
+          VITE_BASE: ${{ vars.VITE_BASE || '/' }}
         run: |
           npm ci
           npm run build

@@ -51,7 +51,7 @@ jobs:
 
       - name: Frontend build + assemble
         env:
-          VITE_BASE: ${{ vars.VITE_BASE || '/zig-playground/' }}
+          VITE_BASE: ${{ vars.VITE_BASE || '/' }}
         run: |
           npm ci
           npm run build

@@ -1,8 +1,8 @@
 import { defineConfig } from "vite";
 import { resolve } from "node:path";
 
-// GitHub project Pages: set VITE_BASE=/zig-playground/ in CI.
-// Local / custom domain: leave unset (defaults to "/").
+// Site root (default). Custom domain: zp.xihale.top
+// Subpath deploys only: set VITE_BASE=/your-prefix/ in CI.
 const base = process.env.VITE_BASE || "/";
 
 // Hashed build assets (*.wasm under /compilers, UI chunks, …) are safe to cache.
