@@ -67,17 +67,19 @@ npm run preview
 
 ## CI
 
-| Workflow | Selects from `versions.json` |
-|----------|------------------------------|
-| **Deploy** | `--select stable` (no `schedule`), then `fill-compilers-from-release` for gaps |
-| **Master compiler (periodic)** | `--select scheduled` (~every 3 days + **manual** `workflow_dispatch`), fill stables from release |
+| Workflow | When compilers are built |
+|----------|---------------------------|
+| **Deploy** (every push) | **Does not rebuild by default.** Downloads `compilers-latest` Release and only builds frontend. Rebuilds wasm only if `versions.json` / `build.zig*` / compiler scripts changed, or you manually **Run workflow → rebuild_compilers**. |
+| **Master compiler** | Builds entries with `schedule` (~every 3 days + **manual**). Stables come from Release. |
 
-**Compiler assets are not in git.** Publish a release for fill/fallback:
+So: **compile once, upload Release, reuse forever** until you change the version list or force rebuild.
 
 ```bash
+# One-time (or when upgrading a pin): produce + publish binaries
 npm run compilers -- --select all
 tar -C public -czf compilers.tar.gz compilers
 gh release upload compilers-latest compilers.tar.gz --clobber
+# after that, normal commits only redeploy the UI
 ```
 
 Optional vars: `COMPILERS_RELEASE`, `VITE_BASE` (default `/` for zp.xihale.top).

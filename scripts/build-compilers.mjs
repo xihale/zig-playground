@@ -9,13 +9,15 @@
  *   node scripts/build-compilers.mjs --only 0.15.2
  *   node scripts/build-compilers.mjs --only master --only 0.15.2
  *   node scripts/build-compilers.mjs --select stable --no-wasm-opt
+ *   node scripts/build-compilers.mjs --select stable --skip-existing
  *   node scripts/build-compilers.mjs --dry-run
  *
  * Selection:
- *   stable     — entries without `schedule` (deploy on push)
+ *   stable     — entries without `schedule`
  *   scheduled  — entries with `schedule` (periodic / manual master job)
  *   all        — every entry
  *   --only id  — explicit ids (can repeat); overrides --select
+ *   --skip-existing — skip ids that already have public/compilers/<id>/zig.wasm
  *
  * For each id:
  *   1) resolve Zig sources (local path preferred, else git clone cache)
@@ -23,7 +25,8 @@
  *   3) zig build -Drelease [-Dwasm-opt] -Dzig-version-string=…
  *   4) package into public/compilers/<id>/
  *
- * Large binaries never go to git.
+ * Large binaries never go to git. CI Deploy reuses Release assets; only build
+ * when a packaged tree is missing (or you run this script on purpose).
  */
 
 import {
@@ -50,6 +53,7 @@ function parseArgs(argv) {
   let dryRun = false;
   let releaseTag = process.env.COMPILERS_RELEASE || "compilers-latest";
   let fillMissing = false;
+  let skipExisting = false;
 
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -59,6 +63,7 @@ function parseArgs(argv) {
     else if (a === "--wasm-opt") wasmOpt = true;
     else if (a === "--dry-run") dryRun = true;
     else if (a === "--fill-missing") fillMissing = true;
+    else if (a === "--skip-existing") skipExisting = true;
     else if (a === "--release-tag") releaseTag = argv[++i];
     else if (a === "-h" || a === "--help") {
       printHelp();
@@ -69,7 +74,7 @@ function parseArgs(argv) {
       process.exit(1);
     }
   }
-  return { only, select, wasmOpt, dryRun, releaseTag, fillMissing };
+  return { only, select, wasmOpt, dryRun, releaseTag, fillMissing, skipExisting };
 }
 
 function printHelp() {
@@ -78,11 +83,16 @@ function printHelp() {
 Options:
   --select stable|scheduled|all   Which versions.json entries to build (default: all)
   --only <id>                     Build only this id (repeatable; overrides --select)
+  --skip-existing                 Skip ids that already have public/compilers/<id>/zig.wasm
   --no-wasm-opt                   Skip -Dwasm-opt
   --fill-missing                  After build, fetch missing ids from GitHub release
   --release-tag <tag>             Release tag for --fill-missing (default: compilers-latest)
   --dry-run                       Print plan only
 `);
+}
+
+function isPackaged(id) {
+  return existsSync(join(root, "public", "compilers", id, "zig.wasm"));
 }
 
 function run(cmd, args, opts = {}) {
@@ -243,6 +253,20 @@ function main() {
     selected.map((v) => v.id + (v.schedule ? ` (schedule=${v.schedule})` : "")).join(", "),
   );
 
+  const toBuild = opts.skipExisting
+    ? selected.filter((v) => {
+        if (isPackaged(v.id)) {
+          console.log(`[${v.id}] skip — already packaged`);
+          return false;
+        }
+        return true;
+      })
+    : selected;
+
+  if (toBuild.length === 0) {
+    console.log("nothing to build (all selected ids already packaged or empty selection)");
+  }
+
   const cacheRoot = join(root, ".zig-version-cache");
   ensureDir(cacheRoot);
 
@@ -252,7 +276,7 @@ function main() {
 
   let failed = null;
   try {
-    for (const entry of selected) {
+    for (const entry of toBuild) {
       try {
         buildOne(entry, {
           wasmOpt: opts.wasmOpt,
@@ -266,7 +290,7 @@ function main() {
       }
     }
   } finally {
-    if (zonBackup && !opts.dryRun) {
+    if (zonBackup && !opts.dryRun && toBuild.length > 0) {
       writeFileSync(zonPath, zonBackup);
       console.log("restored build.zig.zon");
     }
