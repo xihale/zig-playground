@@ -68,9 +68,18 @@ Edit [`versions.json`](versions.json):
 
 ## CI
 
-- `deploy.yml` — build stable compiler(s) + frontend; deploy Pages on `main`/`master`
+- `deploy.yml` — try source build (`zig build -Drelease`), else download release tag `compilers-latest`; deploy Pages on `main`/`master`
 - `master.yml` — schedule `0 0 */3 * *` rebuilds `master` and redeploys
 
-Configure optional repo variables: `ZIG_WASM_REPO`, `ZIG_WASM_REF`, `ZIG_WASM_MASTER_REPO`, `ZIG_WASM_MASTER_REF` for the wasm compiler source.
+**Compiler assets are not in git.** After a local package:
+
+```bash
+node scripts/package-compiler.mjs --id 0.15.2
+tar -C public -czf compilers.tar.gz compilers
+gh release create compilers-latest compilers.tar.gz --notes "wasm trees for CI/Pages"
+# or: gh release upload compilers-latest compilers.tar.gz --clobber
+```
+
+Optional repo variables: `ZIG_WASM_REPO`, `ZIG_WASM_REF`, `COMPILERS_RELEASE`.
 
 Enjoy!

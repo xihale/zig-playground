@@ -11,7 +11,9 @@ permissions:
   pages: write
   id-token: write
 
-# Large wasm/tar never enter git — this job builds and deploys them to Pages only.
+# Large wasm/tar never enter git. Prefer:
+#   1) Build from ../zig-wasm when available (CI checkout of wasm-capable Zig)
+#   2) Else download a prebuilt compilers release (COMPILERS_RELEASE tag)
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -24,39 +26,81 @@ jobs:
           node-version: 22
 
       - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
 
       - name: Install binaryen
         run: |
           sudo apt-get update
           sudo apt-get install -y binaryen
 
-      # Sibling zig wasm tree (local path dep in build.zig.zon). Override with repo secrets if needed.
       - name: Checkout zig-wasm (compiler source)
-        uses: actions/checkout@v4
+        id: zig_src
         continue-on-error: true
+        uses: actions/checkout@v4
         with:
-          repository: ${{ vars.ZIG_WASM_REPO || 'ziglang/zig' }}
-          ref: ${{ vars.ZIG_WASM_REF || '0.15.2' }}
+          repository: ${{ vars.ZIG_WASM_REPO || 'zigtools/zig' }}
+          ref: ${{ vars.ZIG_WASM_REF || 'wasm32-wasi' }}
           path: zig-wasm-src
 
       - name: Link zig-wasm dependency
+        if: steps.zig_src.outcome == 'success'
         run: |
-          if [ -d zig-wasm-src ]; then
-            rm -rf ../zig-wasm
-            ln -s "$GITHUB_WORKSPACE/zig-wasm-src" ../zig-wasm
-            ls -la ../zig-wasm | head
-          elif [ -d ../zig-wasm ]; then
-            echo "using existing ../zig-wasm"
-          else
-            echo "::warning::No zig-wasm source — compiler package step may fail"
-          fi
+          ln -sfn "$GITHUB_WORKSPACE/zig-wasm-src" "$GITHUB_WORKSPACE/../zig-wasm"
+          ls -la "$GITHUB_WORKSPACE/../zig-wasm" | head
 
-      - name: Build wasm compilers (stable ids)
+      - name: Build wasm compilers from source
+        id: zig_build
+        continue-on-error: true
         run: |
           set -euo pipefail
-          zig build -Doptimize=ReleaseSmall -Dwasm-opt
-          # Default stable from versions.json (skip schedule-only master here if not built)
+          if [ ! -d "$GITHUB_WORKSPACE/../zig-wasm" ]; then
+            echo "no zig-wasm tree"
+            exit 1
+          fi
+          # Zig 0.15 preferred_optimize_mode → -Drelease (not -Doptimize)
+          zig build -Drelease -Dwasm-opt
           node scripts/package-compiler.mjs --id 0.15.2 --from zig-out
+          node scripts/package-compiler.mjs --id master --from zig-out
+
+      - name: Download prebuilt compilers (fallback)
+        if: steps.zig_build.outcome != 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="${{ vars.COMPILERS_RELEASE || 'compilers-latest' }}"
+          echo "Source build failed or skipped — fetching release assets: $TAG"
+          mkdir -p public/compilers /tmp/compilers-release
+          gh release download "$TAG" --repo "${{ github.repository }}" --dir /tmp/compilers-release || {
+            echo "::error::No source build and no release '$TAG'. Create a release with packaged compilers (see README)."
+            exit 1
+          }
+          # Prefer compilers.tar.gz (public/compilers layout); else copy trees.
+          if [ -f /tmp/compilers-release/compilers.tar.gz ]; then
+            tar -xzf /tmp/compilers-release/compilers.tar.gz -C public
+          elif [ -d /tmp/compilers-release/compilers ]; then
+            cp -a /tmp/compilers-release/compilers/. public/compilers/
+          elif [ -d /tmp/compilers-release/0.15.2 ]; then
+            cp -a /tmp/compilers-release/. public/compilers/
+          else
+            mkdir -p public/compilers/0.15.2 public/compilers/master
+            cp -a /tmp/compilers-release/. public/compilers/0.15.2/ || true
+            # Per-id tarballs
+            for t in /tmp/compilers-release/*.tar.gz; do
+              [ -f "$t" ] || continue
+              base=$(basename "$t" .tar.gz)
+              [ "$base" = "compilers" ] && continue
+              mkdir -p "public/compilers/$base"
+              tar -xzf "$t" -C "public/compilers/$base" --strip-components=1 2>/dev/null \
+                || tar -xzf "$t" -C public/compilers
+            done
+            if [ ! -d public/compilers/master ] && [ -d public/compilers/0.15.2 ]; then
+              cp -a public/compilers/0.15.2/. public/compilers/master/
+            fi
+          fi
+          test -f public/compilers/0.15.2/zig.wasm
+          ls -laR public/compilers | head -40
 
       - name: Frontend build + assemble multi-version dist
         run: |

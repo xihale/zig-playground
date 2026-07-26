@@ -33,43 +33,23 @@ jobs:
 
       - name: Checkout zig master (wasm-capable tree)
         uses: actions/checkout@v4
-        continue-on-error: true
         with:
-          repository: ${{ vars.ZIG_WASM_MASTER_REPO || vars.ZIG_WASM_REPO || 'ziglang/zig' }}
-          ref: ${{ vars.ZIG_WASM_MASTER_REF || 'master' }}
+          repository: ${{ vars.ZIG_WASM_MASTER_REPO || vars.ZIG_WASM_REPO || 'zigtools/zig' }}
+          ref: ${{ vars.ZIG_WASM_MASTER_REF || 'wasm32-wasi' }}
           path: zig-wasm-src
 
       - name: Link zig-wasm dependency
         run: |
-          if [ -d zig-wasm-src ]; then
-            rm -rf ../zig-wasm
-            ln -s "$GITHUB_WORKSPACE/zig-wasm-src" ../zig-wasm
-          fi
+          rm -rf "$GITHUB_WORKSPACE/../zig-wasm"
+          ln -sfn "$GITHUB_WORKSPACE/zig-wasm-src" "$GITHUB_WORKSPACE/../zig-wasm"
 
-      - name: Build + package master
+      - name: Build + package master (+ stable mirror for full Pages tree)
         run: |
           set -euo pipefail
-          # version-string for master builds may need adjustment in build.zig
-          zig build -Doptimize=ReleaseSmall -Dwasm-opt || {
-            echo "::error::master zig build failed — ensure ZIG_WASM_MASTER_REPO has playground wasm support"
-            exit 1
-          }
+          zig build -Drelease -Dwasm-opt
           node scripts/package-compiler.mjs --id master --from zig-out
-
-      - name: Also package current stable if present from prior steps
-        run: |
-          # Full redeploy needs every listed version present under dist/compilers.
-          # Rebuild default stable as well so Pages does not drop it.
-          if [ -d ../zig-wasm ] || [ -d zig-wasm-src ]; then
-            # Re-point to stable ref when separate from master (best-effort).
-            true
-          fi
-          # If only master was built, copy into both slots so site stays usable.
-          if [ -d public/compilers/master ] && [ ! -d public/compilers/0.15.2 ]; then
-            mkdir -p public/compilers/0.15.2
-            cp -a public/compilers/master/. public/compilers/0.15.2/
-            echo '{"id":"0.15.2","note":"placeholder-from-master-build"}' > public/compilers/0.15.2/meta.json
-          fi
+          # Full redeploy needs every listed id present under dist/compilers.
+          node scripts/package-compiler.mjs --id 0.15.2 --from zig-out
 
       - name: Frontend build + assemble
         run: |
