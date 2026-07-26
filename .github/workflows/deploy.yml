@@ -16,6 +16,12 @@ permissions:
   pages: write
   id-token: write
 
+# Prevent older slow jobs from overwriting a newer deploy (seen with
+# ZlsWorker fix racing the prior 9m build).
+concurrency:
+  group: pages-deploy
+  cancel-in-progress: true
+
 # Frontend deploys on every push.
 # Compilers are REUSED from GitHub Release `compilers-latest` by default.
 # Source rebuild only when:
