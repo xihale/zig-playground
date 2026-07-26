@@ -310,8 +310,8 @@ exampleSelect.addEventListener("change", () => {
 
 // ─── Output routing ─────────────────────────────────────────────
 // Single output area that shows only the current run. Each run clears
-// the previous content. Status (idle / compiling / exit code) lives in
-// the preview toolbar — not in the text stream.
+// the previous content. Status (idle / loading / running / exit code)
+// lives in the preview toolbar — not in the text stream.
 
 const outputContainer = document.getElementById("output-container")!;
 const outputPad = document.getElementById("output-pad")!;
@@ -324,7 +324,6 @@ let runBlock: HTMLElement | null = null;
 type Status =
   | { kind: "idle" }
   | { kind: "loading" }
-  | { kind: "compiling" }
   | { kind: "running" }
   | { kind: "exit"; code: number; crashed?: boolean };
 
@@ -336,9 +335,6 @@ function setStatus(status: Status) {
   } else if (status.kind === "loading") {
     runStatus.classList.add("busy");
     statusText.textContent = "loading";
-  } else if (status.kind === "compiling") {
-    runStatus.classList.add("busy");
-    statusText.textContent = "compiling";
   } else if (status.kind === "running") {
     runStatus.classList.add("busy");
     statusText.textContent = "running";
@@ -394,7 +390,7 @@ function appendRun(text: string) {
 
 // ─── zig worker / run queue ─────────────────────────────────────
 // 1) Worker loads std + zig.wasm async → UI shows "loading".
-// 2) Only after { ready: true } does the compile queue run ("compiling").
+// 2) Only after { ready: true } does the compile queue run.
 // At most one compile+run in flight. Further requests keep a single
 // pending snapshot (latest source wins) and never double-post the worker.
 
@@ -441,7 +437,7 @@ function startRun(source: string) {
   }
 
   clearOutput();
-  setStatus({ kind: "compiling" });
+  // No "compiling" status — keep last status until exit or "running".
   zigWorker.postMessage({ run: source });
 }
 
@@ -467,7 +463,7 @@ function requestRun(opts: { force?: boolean } = {}) {
   const source = compileSource();
 
   if (!compilerReady) {
-    // Asset load in flight — never show "compiling" yet.
+    // Asset load in flight — stay on "loading".
     if (!opts.force && pendingSource !== null && source === pendingSource) return;
     if (!opts.force && pendingSource === null && source === lastStartedSource) return;
     pendingSource = source;
@@ -554,13 +550,10 @@ zigWorker.onmessage = (ev: MessageEvent) => {
 
   const gen = runGen;
 
-  // Compile-time stderr (diagnostics). The UI already shows "compiling"
-  // in the status area — skip the redundant "Compiling..." marker.
+  // Compile-time stderr (diagnostics).
   if (ev.data.stderr) {
     if (gen !== runGen) return;
-    const text: string = ev.data.stderr;
-    if (/^\s*Compiling\.\.\.\s*$/.test(text)) return;
-    appendCompile(text);
+    appendCompile(ev.data.stderr);
     return;
   }
 
@@ -587,7 +580,7 @@ zigWorker.onmessage = (ev: MessageEvent) => {
 
     clearCompile();
     // Only show "running" if still in flight after 350ms — fast programs
-    // go compiling → exit code with no intermediate flicker.
+    // go straight to exit code with no intermediate flicker.
     clearRunningStatusTimer();
     runningStatusTimer = setTimeout(() => {
       runningStatusTimer = null;

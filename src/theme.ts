@@ -19,7 +19,7 @@ export const editorTheme = EditorView.theme({
   // Override CM base (padding: 4px 0). Must live in the CM theme so
   // documentPadding / gutter positioning stay in sync with content.
   ".cm-content": {
-    padding: "0",
+    padding: "var(--editor-code-padding-y) 0 0",
     lineHeight: "var(--editor-line-height)",
   },
   ".cm-line": {

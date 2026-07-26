@@ -5,7 +5,9 @@
  *
  * Strategy:
  *  1. Expand short (single-line) rects to the full line block.
- *  2. Shrink tall multi-line "bridge" rects so they do not overlap those
+ *  2. On the first doc line, also cover documentPadding.top so the wash
+ *     meets the editor chrome.
+ *  3. Shrink tall multi-line "bridge" rects so they do not overlap those
  *     expanded ends. Overlap with a translucent selection color double-paints
  *     and shows up as a bright horizontal band between lines.
  */
@@ -48,13 +50,22 @@ export function fullLineSelection(): Extension {
 
                         const midDocY = piece.top + piece.height / 2 - padTop;
                         const block = view.lineBlockAtHeight(Math.max(0, midDocY));
+                        // Cover documentPadding above the first line so
+                        // selection wash matches the content inset (active line
+                        // does the same via box-shadow pad-top class).
+                        let top = block.top + padTop;
+                        let height = block.height;
+                        if (block.from === 0) {
+                            top = 0;
+                            height += padTop;
+                        }
                         expandedShort.push(
                             new RectangleMarker(
                                 "cm-selectionBackground",
                                 piece.left,
-                                block.top + padTop,
+                                top,
                                 piece.width,
-                                block.height,
+                                height,
                             ),
                         );
                     }

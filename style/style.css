@@ -25,7 +25,7 @@
 
     /* status: restrained yellow / green / red (dark-canvas friendly) */
     --status-idle: #7d8187;
-    --status-busy: #a89050;  /* muted yellow — compiling / running */
+    --status-busy: #a89050;  /* muted yellow — loading / running */
     --status-ok:   #5a8f6e;  /* muted green — exit 0 */
     --status-err:  #a66b6b;  /* muted red  — non-zero / crash */
 
@@ -60,7 +60,7 @@
     /* Pixel line box — keep selection/gutter/content heights on one grid. */
     --editor-line-box: calc(var(--editor-font-size) * 1.55);
     --editor-code-padding-x: 12px;
-    --editor-code-padding-y: 12px;
+    --editor-code-padding-y: 4px;
     --editor-line-number-min-width: 20px;
     --editor-line-number-padding-left: 24px;
     --editor-line-number-padding-right: 16px;
@@ -524,7 +524,7 @@ body.embed #preview-pane {
 }
 
 .cm-editor .cm-content {
-    /* padding: 0 is set in theme.ts so CM documentPadding tracks it */
+    /* vertical padding set in theme.ts so CM documentPadding tracks it */
     caret-color: var(--code-text-color);
 }
 
@@ -552,6 +552,15 @@ body.embed #preview-pane {
 .cm-activeLine,
 .cm-activeLineGutter {
     background: var(--editor-surface) !important;
+}
+
+/* Extend active wash into .cm-content top documentPadding on the first line
+   (padding is outside line boxes, so background alone cannot cover it). */
+.cm-activeLine-pad-top {
+    box-shadow: 0 calc(-1 * var(--editor-code-padding-y)) 0 0 var(--editor-surface);
+}
+.cm-activeLineGutter-pad-top {
+    box-shadow: 0 calc(-1 * var(--editor-code-padding-y)) 0 0 var(--editor-surface);
 }
 
 .cm-focused {
