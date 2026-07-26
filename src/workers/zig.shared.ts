@@ -28,7 +28,7 @@ import type { ClientMsg, WorkerMsg, ZirCacheInfo } from "../shared-protocol";
  * Mirrors utils.ts stderrOutput() shape but with a custom emit target,
  * preserving the { stream: true } decode so multi-write concatenation works.
  */
-function portStdout(emit: (text: string) => void): ConsoleStdout {
+function portStderr(emit: (text: string) => void): ConsoleStdout {
     const dec = new TextDecoder("utf-8", { fatal: false });
     const out = new ConsoleStdout((buffer) => {
         emit(dec.decode(buffer, { stream: true }));
@@ -231,8 +231,6 @@ function releaseVersion(versionId: string) {
     }
 }
 
-let currentlyRunning = false; // defensive; the per-compiler chain already serializes.
-
 /**
  * Compile one source against an assembled compiler. Body lifted from
  * src/workers/zig.ts:120-180; postMessage → port.postMessage with protocol.
@@ -247,8 +245,6 @@ async function doOneCompile(
     versionId: string,
     source: string,
 ) {
-    if (currentlyRunning) return; // belt-and-suspenders; queue guarantees serial.
-    currentlyRunning = true;
     try {
         const c = compilers.get(versionId);
         if (!c || !c.ready) return; // version evicted before this run started.
@@ -268,12 +264,12 @@ async function doOneCompile(
         const env: string[] = [];
         const fds = [
             new OpenFile(new File([])),
-            portStdout((text) => {
+            portStderr((text) => {
                 if (st.currentRequestId === requestId) {
                     postToPort(port, { kind: "stderr", requestId, text });
                 }
             }),
-            portStdout((text) => {
+            portStderr((text) => {
                 if (st.currentRequestId === requestId) {
                     postToPort(port, { kind: "stderr", requestId, text });
                 }
@@ -321,8 +317,6 @@ async function doOneCompile(
             });
             postToPort(port, { kind: "failed", requestId });
         }
-    } finally {
-        currentlyRunning = false;
     }
 }
 

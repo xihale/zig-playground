@@ -30,6 +30,7 @@ function attachLegacyAdapter(
     worker: Worker,
     onMsg: (m: WorkerMsg) => void,
     versionIdRef: { current: string | null },
+    pendingReqId: { current: string | null },
 ) {
     worker.onmessage = (ev: MessageEvent) => {
         const d = ev.data;
@@ -72,12 +73,12 @@ function attachLegacyAdapter(
     };
 }
 
-const pendingReqId = { current: null as string | null };
-
 export class ZigSharedClient {
     private sw: SharedWorker | null = null;
     private dw: Worker | null = null;
     private versionIdRef = { current: null as string | null };
+    /** Request id of the in-flight run; stamped onto legacy-shape replies. */
+    private pendingReqId = { current: null as string | null };
     /** User-supplied handler; receives normalized WorkerMsg. */
     public onmessage: ((m: WorkerMsg) => void) | null = null;
 
@@ -95,7 +96,7 @@ export class ZigSharedClient {
             this.dw = new ZigWorker();
             attachLegacyAdapter(this.dw, (m) => {
                 if (this.onmessage) this.onmessage(m);
-            }, this.versionIdRef);
+            }, this.versionIdRef, this.pendingReqId);
         }
     }
 
@@ -107,7 +108,7 @@ export class ZigSharedClient {
             return;
         }
         // run
-        pendingReqId.current = msg.requestId;
+        this.pendingReqId.current = msg.requestId;
         if (this.sw) {
             this.sw.port.postMessage(msg);
         } else {
