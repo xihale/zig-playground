@@ -368,6 +368,13 @@ onconnect = (ev: MessageEvent) => {
     port.start();
 };
 
+/**
+ * Best-effort port cleanup. SharedWorker MessagePorts do not reliably emit a
+ * close event when a tab unloads, so refcount may undercount on abrupt
+ * disconnects. Impact is bounded: a stale Compiler entry holds memory only;
+ * re-assembly is still Cache-Storage-backed. `onmessageerror` covers the
+ * detectable cases.
+ */
 function cleanupPort(port: MessagePort) {
     const st = ports.get(port);
     if (!st) return;
