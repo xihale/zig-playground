@@ -85,17 +85,53 @@ jobs:
           echo "rebuild=false" >> "$GITHUB_OUTPUT"
           echo "reason=reuse Release compilers (all versions.json ids present)" | tee -a "$GITHUB_STEP_SUMMARY"
 
-      - name: Install Zig + binaryen (only if rebuilding)
+      - name: Install host Zig versions + binaryen (only if rebuilding)
         if: steps.need.outputs.rebuild == 'true'
-        uses: mlugg/setup-zig@v2
-        with:
-          version: 0.15.2
-
-      - name: Install binaryen (only if rebuilding)
-        if: steps.need.outputs.rebuild == 'true'
+        env:
+          FORCE: ${{ github.event_name == 'workflow_dispatch' && inputs.rebuild_compilers || false }}
         run: |
+          set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y binaryen
+          sudo apt-get install -y binaryen jq xz-utils
+          # Install every unique hostZig needed by versions that will rebuild.
+          mapfile -t HOSTS < <(node --input-type=module -e '
+            import { loadVersionsManifest } from "./scripts/versions-lib.mjs";
+            import { existsSync } from "node:fs";
+            import { join } from "node:path";
+            const force = process.env.FORCE === "true";
+            const m = loadVersionsManifest();
+            const need = m.versions.filter(v => force || !existsSync(join("public/compilers", v.id, "zig.wasm")));
+            const hosts = [...new Set(need.map(v => v.hostZig).filter(Boolean))];
+            process.stdout.write(hosts.join("\n"));
+          ')
+          echo "hostZig to install: ${HOSTS[*]:-(none)}"
+          mkdir -p "$HOME/.local/share/zvm"
+          INDEX=$(mktemp)
+          curl -fsSL https://ziglang.org/download/index.json > "$INDEX"
+          for HOST in "${HOSTS[@]}"; do
+            [ -z "$HOST" ] && continue
+            DEST="$HOME/.local/share/zvm/$HOST"
+            if [ -x "$DEST/zig" ]; then
+              echo "hostZig $HOST already at $DEST"
+              continue
+            fi
+            echo "installing hostZig=$HOST"
+            if [ "$HOST" = "master" ]; then
+              URL=$(jq -r '.master["x86_64-linux"].tarball' "$INDEX")
+            else
+              URL=$(jq -r --arg v "$HOST" '.[$v]["x86_64-linux"].tarball // empty' "$INDEX")
+            fi
+            if [ -z "$URL" ] || [ "$URL" = "null" ]; then
+              echo "::error::no x86_64-linux tarball for hostZig=$HOST"
+              exit 1
+            fi
+            TMP=$(mktemp -d)
+            curl -fsSL "$URL" | tar -xJ -C "$TMP"
+            INNER=$(find "$TMP" -maxdepth 1 -type d -name 'zig-*' | head -1)
+            mkdir -p "$DEST"
+            cp -a "$INNER"/. "$DEST"/
+            "$DEST/zig" version
+          done
 
       - name: Rebuild compilers from source
         if: steps.need.outputs.rebuild == 'true'

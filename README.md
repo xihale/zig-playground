@@ -8,9 +8,10 @@ Run and explore Zig in your browser, with compiler and LSP support built in.
 
 | Path | Meaning |
 |------|---------|
-| `/` | Configurable default (`versions.json` → `default`) |
+| `/` | Configurable default (`versions.json` → `default`, currently **0.16.0**) |
+| `/0.16.0/` | Current stable pin (same binaries as `/`) |
+| `/0.15.2/` | Older pin (binaries from Release; rebuild only when forced/missing) |
 | `/master/` | Tracking build (`schedule: "3d"`, CI + manual) |
-| `/0.15.2/` | Pinned release (binaries from Release; rebuild only when forced/missing) |
 
 Shared UI under `/assets/`. Per-version compilers:
 
@@ -43,10 +44,11 @@ Design: [`docs/superpowers/specs/2026-07-26-multi-version-compilers-design.md`](
 
 | id | build | git | hostZig | notes |
 |----|-------|-----|---------|-------|
+| `0.16.0` | **`in-tree`** | **`codeberg.org/ziglang/zig@0.16.0`** | `0.16.0` | zig.wasm in-tree + ZLS 0.16.0 (Zig is not a package from 0.16) |
 | `0.15.2` | `playground` | `github.com/ziglang/zig@0.15.2` | `0.15.2` | full zig+zls via repo `build.zig` |
-| `master` | **`in-tree`** | **`codeberg.org/ziglang/zig@master`** | **`master`** (nightly) | builds wasm inside the Zig tree; ZLS not yet supportable ([zls#3208](https://github.com/zigtools/zls/issues/3208)) → `zlsFallbackId` |
+| `master` | **`in-tree`** | **`codeberg.org/ziglang/zig@master`** | **`master`** (nightly) | builds wasm inside the Zig tree; ZLS lags ([zls#3208](https://github.com/zigtools/zls/issues/3208)) → `zlsFallbackId: 0.16.0` |
 
-Local overrides: `../zig-wasm` (0.15.2), `../zig-master` (official master). Host nightlies via `zvm i master`.
+Local overrides: `../zig-0.16.0`, `../zig-wasm` (0.15.2), `../zig-master`. Hosts via `zvm i 0.16.0` / `zvm i master`.
 
 ```bash
 # master compiler (needs host Zig master / nightly)
@@ -58,12 +60,12 @@ npm run compilers:scheduled
 npm run compilers:plan          # dry-run: who would build
 npm run compilers:stable        # no schedule
 npm run compilers:scheduled     # has schedule (master, …)
-npm run compilers -- --only 0.15.2
+npm run compilers -- --only 0.16.0
 ```
 
 ## Installation
 
-Requires Zig `0.15.2` and (for local path builds) a wasm-capable tree at `../zig-wasm`.
+Requires host Zig matching each pin (`0.16.0` for the default; `0.15.2` if building that pin). Install with `zvm i 0.16.0`.
 
 ```bash
 npm run compilers:stable    # reads versions.json → zig build → public/compilers/<id>
@@ -71,7 +73,7 @@ npm install
 npm run dev
 ```
 
-Open `/` or `/0.15.2/`. Toolbar dropdown does full-page navigation.
+Open `/` (→ 0.16.0) or `/0.16.0/` / `/0.15.2/`. Toolbar dropdown does full-page navigation.
 
 ### Production dist
 

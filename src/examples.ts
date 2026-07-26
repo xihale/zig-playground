@@ -1,5 +1,5 @@
 // Bundled examples for the Zig playground.
-// Each one targets Zig 0.15.2 and the self-hosted wasm32 backend
+// Each one targets Zig 0.16.x and the self-hosted wasm32 backend
 // (no libc, no std.os / std.fs networking). They use only std.debug.print
 // so they run under WASI without filesystem side effects.
 

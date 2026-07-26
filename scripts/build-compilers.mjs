@@ -268,9 +268,114 @@ function writeBuildZon(entry, zigAbsPath) {
 }
 
 /**
- * Official master (and other post-0.16 trees): build zig.wasm inside the
- * compiler source tree. Playground build.zig cannot host these as a package
- * dependency with the 0.15-style API / ZLS pairing.
+ * Build playground src/zls.zig → zls.wasm using host Zig + versions.json zls package.
+ * Used by in-tree Zig builds where the compiler is not a package dependency.
+ */
+function buildZlsWasm(entry, zigBin, zlsDest, { wasmOpt }) {
+  if (!entry.zls?.url || !entry.zls?.hash) {
+    throw new Error(`[${entry.id}] buildZlsWasm needs zls.url / zls.hash`);
+  }
+  const zlsDir = join(root, ".zig-version-cache", entry.id, "zls-build");
+  if (existsSync(zlsDir)) rmSync(zlsDir, { recursive: true, force: true });
+  ensureDir(zlsDir);
+
+  // 0.15 playground uses src/zls.zig; 0.16+ in-tree uses src/zls-0.16.zig
+  const zlsEntry = entry.zlsEntrypoint || "src/zls-0.16.zig";
+  const zlsSrcAbs = join(root, zlsEntry);
+  if (!existsSync(zlsSrcAbs)) {
+    throw new Error(`[${entry.id}] zls entrypoint missing: ${zlsEntry}`);
+  }
+  const zlsSrcRel = relative(zlsDir, zlsSrcAbs).split("\\").join("/");
+  writeFileSync(
+    join(zlsDir, "build.zig"),
+    `const std = @import("std");
+pub fn build(b: *std.Build) void {
+    const target = b.resolveTargetQuery(.{ .cpu_arch = .wasm32, .os_tag = .wasi });
+    const optimize: std.builtin.OptimizeMode = .ReleaseSmall;
+    const zls_dep = b.dependency("zls", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    const zls_exe = b.addExecutable(.{
+        .name = "zls",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("${zlsSrcRel}"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "zls", .module = zls_dep.module("zls") },
+            },
+        }),
+    });
+    zls_exe.entry = .disabled;
+    zls_exe.rdynamic = true;
+    b.installArtifact(zls_exe);
+}
+`,
+  );
+  writeFileSync(
+    join(zlsDir, "build.zig.zon"),
+    `.{
+    .name = .zls_stage,
+    .version = "0.0.0",
+    .fingerprint = 0xffb1023a664b35b2,
+    .dependencies = .{
+        .zls = .{
+            .url = "${entry.zls.url}",
+            .hash = "${entry.zls.hash}",
+        },
+    },
+    .paths = .{""},
+}
+`,
+  );
+
+  let zlsBuild = spawnSync(zigBin, ["build", "--release=small"], {
+    cwd: zlsDir,
+    encoding: "utf8",
+    env: process.env,
+  });
+  if (zlsBuild.status !== 0 && /invalid fingerprint.*use this value: (0x[0-9a-fA-F]+)/.test(zlsBuild.stderr || "")) {
+    const fp = (zlsBuild.stderr || "").match(/use this value: (0x[0-9a-fA-F]+)/)[1];
+    writeFileSync(
+      join(zlsDir, "build.zig.zon"),
+      `.{
+    .name = .zls_stage,
+    .version = "0.0.0",
+    .fingerprint = ${fp},
+    .dependencies = .{
+        .zls = .{
+            .url = "${entry.zls.url}",
+            .hash = "${entry.zls.hash}",
+        },
+    },
+    .paths = .{""},
+}
+`,
+    );
+    run(zigBin, ["build", "--release=small"], { cwd: zlsDir });
+  } else if (zlsBuild.status !== 0) {
+    console.error(zlsBuild.stderr || zlsBuild.stdout);
+    throw new Error(`[${entry.id}] zls.wasm build failed`);
+  }
+
+  const built =
+    [
+      join(zlsDir, "zig-out", "bin", "zls.wasm"),
+      join(zlsDir, "zig-out", "bin", "zls"),
+    ].find((p) => existsSync(p)) || null;
+  if (!built) throw new Error(`[${entry.id}] zls.wasm not found after build`);
+  ensureDir(join(zlsDest, ".."));
+  cpSync(built, zlsDest);
+  maybeWasmOpt(zlsDest, wasmOpt);
+  console.log(`[${entry.id}] zls.wasm → ${zlsDest}`);
+}
+
+/**
+ * Official 0.16+ / master: build zig.wasm inside the compiler source tree.
+ * Playground build.zig cannot host these as a package dependency (Zig is not
+ * a package from 0.16 onward). ZLS is built separately via buildZlsWasm, or
+ * copied via zlsFallbackId when ZLS lags master (zls#3208).
  */
 function buildInTree(entry, { wasmOpt, dryRun, cacheRoot }) {
   const zigTree = dryRun
@@ -398,11 +503,19 @@ pub fn build(b: *std.Build) void {
   // 4) zig.tar.gz = lib/std
   run("tar", ["-czf", join(stage, "zig.tar.gz"), "-C", zigTree, "lib/std"]);
 
-  // 5) zls.wasm — optional / fallback (ZLS lags Zig master)
+  // 5) zls.wasm — build paired ZLS when coords given; else fallback; else omit
   let zlsNote = null;
   const zlsDest = join(stage, "bin", "zls.wasm");
   ensureDir(join(stage, "bin"));
-  if (entry.zlsFallbackId) {
+  if (entry.zls?.url && entry.zls?.hash && !entry.zlsFallbackId) {
+    try {
+      buildZlsWasm(entry, zigBin, zlsDest, { wasmOpt });
+      zlsNote = `built from ${entry.zls.url}`;
+    } catch (e) {
+      console.warn(`[${entry.id}] zls build failed:`, e.message || e);
+      zlsNote = `build failed: ${e.message || e}`;
+    }
+  } else if (entry.zlsFallbackId) {
     const fb = join(root, "public", "compilers", entry.zlsFallbackId, "zls.wasm");
     if (existsSync(fb)) {
       cpSync(fb, zlsDest);

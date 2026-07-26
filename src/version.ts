@@ -2,9 +2,10 @@
  * Multi-version compiler routing.
  *
  * Path rules (see docs/superpowers/specs/2026-07-26-multi-version-compilers-design.md):
- *   /              → versions.default
- *   /master/       → id "master"
+ *   /              → versions.default (currently 0.16.0)
+ *   /0.16.0/       → id "0.16.0"
  *   /0.15.2/       → id "0.15.2"
+ *   /master/       → id "master"
  *
  * Compiler binaries live at /compilers/<id>/… (never git).
  */

@@ -1,6 +1,26 @@
 {
-  "default": "0.15.2",
+  "default": "0.16.0",
   "versions": [
+    {
+      "id": "0.16.0",
+      "label": "0.16.0",
+      "build": "in-tree",
+      "zigVersionString": "0.16.0",
+      "hostZig": "0.16.0",
+      "zig": {
+        "path": "../zig-0.16.0",
+        "git": {
+          "repo": "https://codeberg.org/ziglang/zig",
+          "ref": "0.16.0"
+        },
+        "patch": "patches/zig-0.16.0-playground-wasm.patch"
+      },
+      "zlsEntrypoint": "src/zls-0.16.zig",
+      "zls": {
+        "url": "git+https://github.com/zigtools/zls?ref=0.16.0#494486203c3a48927f2383aa3d5ce5fca112186d",
+        "hash": "zls-0.16.0-rmm5fs_JJgBG3dk5HwYK1FylE2_LMN0BYpX57tPzT-Xc"
+      }
+    },
     {
       "id": "0.15.2",
       "label": "0.15.2",
@@ -34,7 +54,7 @@
         },
         "patch": "patches/zig-master-playground-wasm.patch"
       },
-      "zlsFallbackId": "0.15.2",
+      "zlsFallbackId": "0.16.0",
       "zls": {
         "url": "git+https://github.com/zigtools/zls?ref=master#8da87d4f3305a550e7b739bad764e34bf1e46a08",
         "hash": "zls-0.17.0-dev-rmm5fhsnJgACAm2dSuoMNDK6QziDk419sy5-ORvIiL0y"
