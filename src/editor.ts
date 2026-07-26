@@ -326,6 +326,20 @@ function replaceDoc(text: string) {
   });
 }
 
+// ─── Lazy ZLS boot on first editor interaction ──────────────────
+// Embed iframes default to no autorun, so they never hit the Run path
+// that otherwise boots ZLS. Hoist hover/completion to life on the first
+// pointerenter / focus on the editor surface. `once` keeps it to a single
+// boot; pointerenter fires before a click can land, so hover is warm by
+// the time the user actually hovers a symbol.
+{
+  const editorEl = editor.contentDOM;
+  const bootOnce = () => bootZlsOnce();
+  const opts: AddEventListenerOptions = { once: true };
+  editorEl.addEventListener("pointerenter", bootOnce, opts);
+  editorEl.addEventListener("focus", bootOnce, opts);
+}
+
 // ─── Examples dropdown ──────────────────────────────────────────
 
 const exampleSelect = document.getElementById("example-select")! as HTMLSelectElement;
@@ -469,13 +483,27 @@ let hasRunOnce = false;
 // does not auto-run stay asset-free until the user actually clicks Run.
 let zigWorker: ZigSharedClient | null = null;
 let workersBooted = false;
+
+// ZLS boot is decoupled from the compiler worker: embed iframes default to
+// no autorun, so they never hit requestRun() — but hover/completion still
+// need ZLS. Boot it on the first editor interaction (pointer/focus) OR the
+// first Run, whichever comes first. The ZLS worker buffers LSP requests
+// until boot finishes, so early hovers are not lost.
+let zlsBooted = false;
+function bootZlsOnce() {
+  if (zlsBooted) return;
+  zlsBooted = true;
+  initZls(playgroundVersion.id);
+}
+
 function bootWorkersOnce() {
   if (workersBooted) return;
   workersBooted = true;
   zigWorker = new ZigSharedClient();
   zigWorker.onmessage = onZigWorkerMessage;
   zigWorker.dispatch({ kind: "init", versionId: playgroundVersion.id });
-  initZls(playgroundVersion.id);
+  // Diagnostics gate auto-run, so ZLS is needed once we start running too.
+  bootZlsOnce();
 }
 
 /** Monotonic id for the in-flight job; stale worker/runner msgs ignored. */
