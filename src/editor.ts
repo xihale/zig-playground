@@ -8,6 +8,7 @@ import {
   dropCursor,
   rectangularSelection,
   crosshairCursor,
+  type ViewUpdate,
 } from "@codemirror/view";
 import { formatDocument, LSPPlugin } from "@codemirror/lsp-client";
 import { history, defaultKeymap, historyKeymap, indentWithTab } from "@codemirror/commands";
@@ -54,8 +55,31 @@ import ZigWorker from './workers/zig.ts?worker';
 // @ts-ignore
 import RunnerWorker from './workers/runner.ts?worker';
 
-/** Auto-compile debounce after edits (ms). Matches serverDiagnostics sync lag. */
+/**
+ * Settle window after a structural trigger / Mod-S before syncing to ZLS
+ * and waiting for publishDiagnostics (ms). Same order of magnitude as
+ * `@codemirror/lsp-client` serverDiagnostics autoSync.
+ */
 const AUTO_RUN_DEBOUNCE_MS = 500;
+
+/**
+ * B: arm auto-run only on statement/block boundaries or multi-line paste —
+ * not on every keystroke. Lone Enter (`\n`) is excluded.
+ */
+function isStructuralAutoRunTrigger(update: ViewUpdate): boolean {
+  let hit = false;
+  update.changes.iterChanges((_fa, _ta, _fb, _tb, inserted) => {
+    if (hit) return;
+    const text = inserted.toString();
+    if (text.includes(";") || text.includes("}")) {
+      hit = true;
+      return;
+    }
+    // Multi-line paste (more than a single newline from Enter).
+    if (text.length > 1 && text.includes("\n")) hit = true;
+  });
+  return hit;
+}
 
 // Embed mode: blog/doc iframes pass source via ?code= / ?b64= and hide chrome.
 const embedConfig = parseEmbedConfig();
@@ -246,12 +270,16 @@ const editor = new EditorView({
       keymap.of([
         indentWithTab,
         {
-          // Format rewrites the whole buffer — skip in cut dual-doc (would
-          // only reformat the slice and break the stitch).
+          // Mod-S: format (when not dual-doc cut) + arm auto-run.
+          // preventDefault avoids the browser "Save page" dialog.
           key: "Mod-s",
+          preventDefault: true,
           run: (view) => {
-            if (cutBinding?.visible) return false;
-            return formatDocument(view);
+            // Format rewrites the whole buffer — skip in cut dual-doc (would
+            // only reformat the slice and break the stitch).
+            if (!cutBinding?.visible) formatDocument(view);
+            requestAutoRun();
+            return true;
           },
         },
         {
@@ -266,17 +294,15 @@ const editor = new EditorView({
       zigLanguage,
       syntaxHighlighting(highlightStyle),
       lspClient.plugin("file:///main.zig"),
-      // Auto-run (full UI and embed share the same core):
-      // any edit → debounce → run only when LSP reports no errors.
-      // Retries when publishDiagnostics clears the last errors.
+      // Auto-run (full UI + embed): structural edit / Mod-S → debounce →
+      // sync → wait for diagnostics → run only when LSP reports no errors.
       EditorView.updateListener.of((update) => {
         if (update.docChanged) {
           scheduleSave();
-          autoRunWanted = true;
-          scheduleAutoRun();
+          noteAutoRunDocChanged(update);
           return;
         }
-        // Fresh diagnostics: retry if an earlier attempt was blocked by errors.
+        // D: gate only after a diagnostics publish for the settled buffer.
         for (const tr of update.transactions) {
           for (const e of tr.effects) {
             if (e.is(setDiagnosticsEffect)) {
@@ -431,12 +457,26 @@ function appendRun(text: string) {
 
 /** True once zig worker has finished fetching/compiling compiler assets. */
 let compilerReady = false;
+/**
+ * True once the user (or an autorun URL) has triggered the first run.
+ * Until then: workers stay un-booted (no asset fetches), the output pane
+ * is hidden, and structural-edit auto-run is suppressed.
+ */
+let hasRunOnce = false;
 
-// Path = version: `/` → default, `/0.15.2/` → 0.15.2, `/master/` → master.
-// Only that tree is fetched; other ids stay untouched until navigation.
-let zigWorker = new ZigWorker();
-zigWorker.postMessage({ init: { versionId: playgroundVersion.id } });
-initZls(playgroundVersion.id);
+// Lazy workers: do not fetch zig.wasm / zls.wasm until the first run is
+// requested. Embed (default no autorun) and the full app on a path that
+// does not auto-run stay asset-free until the user actually clicks Run.
+let zigWorker: Worker | null = null;
+let workersBooted = false;
+function bootWorkersOnce() {
+  if (workersBooted) return;
+  workersBooted = true;
+  zigWorker = new ZigWorker();
+  zigWorker.onmessage = onZigWorkerMessage;
+  zigWorker.postMessage({ init: { versionId: playgroundVersion.id } });
+  initZls(playgroundVersion.id);
+}
 
 /** Monotonic id for the in-flight job; stale worker/runner msgs ignored. */
 let runGen = 0;
@@ -448,14 +488,38 @@ let pendingSource: string | null = null;
 let lastStartedSource: string | null = null;
 let autoRunTimer: ReturnType<typeof setTimeout> | null = null;
 /**
- * True after a doc edit until we successfully queue an auto-run (or force
- * run). Stays true while LSP still reports errors so a later clean
+ * True after a structural trigger / Mod-S until we queue an auto-run (or
+ * force run). Stays true while LSP still reports errors so a later clean
  * publishDiagnostics can unstick the queue.
  */
 let autoRunWanted = false;
+/**
+ * D: after debounce+sync, true until tryAutoRun consumes a diagnostics
+ * publish (or the settle cycle is re-armed by further edits).
+ */
+let autoRunAwaitingDiags = false;
+/** Bumped on every settle re-arm so in-flight timers/diag waits go stale. */
+let autoRunEpoch = 0;
+/**
+ * After sync with didChange, wait this long for publishDiagnostics before
+ * gating on whatever lint is present (ZLS hang safety).
+ */
+const AUTO_RUN_DIAGS_WAIT_MS = 2000;
+/**
+ * When sync was a no-op (e.g. lsp-client autoSync already flushed), diags
+ * for this buffer are usually already applied or in flight — short fallback.
+ */
+const AUTO_RUN_DIAGS_FALLBACK_MS = 120;
 let activeRunner: Worker | null = null;
 /** Delay before flipping status to "running" — skips flash on fast exits. */
 let runningStatusTimer: ReturnType<typeof setTimeout> | null = null;
+
+function clearAutoRunTimer() {
+  if (autoRunTimer !== null) {
+    clearTimeout(autoRunTimer);
+    autoRunTimer = null;
+  }
+}
 
 function clearRunningStatusTimer() {
   if (runningStatusTimer !== null) {
@@ -478,7 +542,7 @@ function startRun(source: string) {
 
   clearOutput();
   // No "compiling" status — keep last status until exit or "running".
-  zigWorker.postMessage({ run: source });
+  zigWorker!.postMessage({ run: source });
 }
 
 /** End the current job if still current; drain at most one pending. */
@@ -501,6 +565,11 @@ function completeRun(gen: number) {
  */
 function requestRun(opts: { force?: boolean } = {}) {
   const source = compileSource();
+
+  // First ever run: boot workers (fetches zig.wasm / zls.wasm). Subsequent
+  // requests land in the !compilerReady / runBusy branches below while the
+  // assets stream in.
+  if (!workersBooted) bootWorkersOnce();
 
   if (!compilerReady) {
     // Asset load in flight — stay on "loading".
@@ -529,11 +598,15 @@ function requestRun(opts: { force?: boolean } = {}) {
 }
 /** Button / first load / example switch — always run (ignores LSP errors). */
 function runCode() {
-  autoRunWanted = false;
-  if (autoRunTimer !== null) {
-    clearTimeout(autoRunTimer);
-    autoRunTimer = null;
+  if (!hasRunOnce) {
+    hasRunOnce = true;
+    document.body.classList.add("has-run");
+    const embedRunBtn = document.getElementById("embed-run");
+    if (embedRunBtn) embedRunBtn.hidden = true;
   }
+  autoRunWanted = false;
+  autoRunAwaitingDiags = false;
+  clearAutoRunTimer();
   requestRun({ force: true });
 }
 
@@ -547,29 +620,83 @@ function hasLspErrors(): boolean {
 }
 
 /**
- * Auto-compile only when LSP shows no errors. Keeps `autoRunWanted` set
- * while blocked so a later clean diagnostic publish can proceed.
+ * Auto-compile only when LSP shows no errors for the settled buffer.
+ * Keeps `autoRunWanted` + `autoRunAwaitingDiags` while blocked so a later
+ * clean publishDiagnostics can proceed.
  */
 function tryAutoRun() {
-  if (!autoRunWanted) return;
+  if (!autoRunWanted || !autoRunAwaitingDiags) return;
+  const plugin = LSPPlugin.get(editor);
+  // Buffer moved since last sync — wait for the re-armed settle cycle.
+  if (plugin && !plugin.unsyncedChanges.empty) return;
   if (hasLspErrors()) return;
   autoRunWanted = false;
+  autoRunAwaitingDiags = false;
+  clearAutoRunTimer();
   requestRun({ force: false });
 }
 
-/** Debounced auto-run — push buffer to ZLS, then gate on diagnostics. */
-function scheduleAutoRun() {
-  if (autoRunTimer !== null) clearTimeout(autoRunTimer);
+/**
+ * D: debounce → sync → wait for setDiagnosticsEffect (not stale pre-sync
+ * lint). Fallback timer covers no-op sync when autoSync already flushed.
+ */
+function scheduleAutoRunSettle() {
+  clearAutoRunTimer();
+  autoRunAwaitingDiags = false;
+  const epoch = ++autoRunEpoch;
   autoRunTimer = setTimeout(() => {
     autoRunTimer = null;
-    // Push the latest buffer (dual-doc transport rewrites to full source).
+    if (!autoRunWanted || epoch !== autoRunEpoch) return;
     const plugin = LSPPlugin.get(editor);
-    if (plugin) plugin.client.sync();
-    tryAutoRun();
+    if (!plugin) {
+      autoRunAwaitingDiags = true;
+      tryAutoRun();
+      return;
+    }
+    const hadUnsynced = !plugin.unsyncedChanges.empty;
+    plugin.client.sync();
+    if (!autoRunWanted || epoch !== autoRunEpoch) return;
+    autoRunAwaitingDiags = true;
+    // Prefer the next publishDiagnostics; fall back so we never hang if
+    // ZLS does not re-publish (sync was a no-op / already applied).
+    const waitMs = hadUnsynced ? AUTO_RUN_DIAGS_WAIT_MS : AUTO_RUN_DIAGS_FALLBACK_MS;
+    autoRunTimer = setTimeout(() => {
+      autoRunTimer = null;
+      if (!autoRunWanted || epoch !== autoRunEpoch) return;
+      tryAutoRun();
+    }, waitMs);
   }, AUTO_RUN_DEBOUNCE_MS);
 }
 
-zigWorker.onmessage = (ev: MessageEvent) => {
+/** Arm auto-run from structural edit or Mod-S. */
+function requestAutoRun() {
+  // Suppress auto-run until the first explicit run — no point compiling
+  // before the user has even looked at the code (and it would boot workers
+  // + fetch assets we are trying to keep deferred).
+  if (!hasRunOnce) return;
+  autoRunWanted = true;
+  scheduleAutoRunSettle();
+}
+
+/**
+ * B: structural inserts / format arm auto-run. While already armed, any
+ * further edit re-settles so we never compile against stale diagnostics.
+ */
+function noteAutoRunDocChanged(update: ViewUpdate) {
+  if (isStructuralAutoRunTrigger(update)) {
+    requestAutoRun();
+    return;
+  }
+  for (const tr of update.transactions) {
+    if (tr.isUserEvent("format")) {
+      requestAutoRun();
+      return;
+    }
+  }
+  if (autoRunWanted) scheduleAutoRunSettle();
+}
+
+const onZigWorkerMessage = (ev: MessageEvent) => {
   // Compiler assets ready (or failed) — open the compile queue.
   if (ev.data.ready === true) {
     compilerReady = true;
@@ -771,12 +898,24 @@ if (!embedConfig.embed) {
 if (embedConfig.embed) {
   document.getElementById("preview-pane")!.appendChild(runStatus);
   runStatus.classList.add("embed-status");
+  // Floating Run button lives on the editor pane (the output pane is
+  // hidden until the first run). Hidden after first run via `has-run`.
+  const embedRun = document.createElement("button");
+  embedRun.type = "button";
+  embedRun.id = "embed-run";
+  embedRun.textContent = "▶";
+  embedRun.title = "Run";
+  embedRun.setAttribute("aria-label", "Run");
+  embedRun.hidden = embedConfig.autorun;
+  embedRun.addEventListener("click", runCode);
+  document.getElementById("editor-pane")!.appendChild(embedRun);
 }
 
-// First paint: loading while this path's zig.wasm / std warm;
-// initial example runs after { ready: true }. Embed: autorun=0 stays idle.
-setStatus({ kind: "loading" });
+// First paint: if autorun is on, kick the first run (boots workers,
+// fetches assets, shows output). Otherwise stay idle — workers un-booted,
+// output pane hidden — until the user clicks Run.
 if (embedConfig.autorun) {
+  setStatus({ kind: "loading" });
   runCode();
 } else {
   setStatus({ kind: "idle" });

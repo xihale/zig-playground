@@ -89,7 +89,9 @@ export function buildEmbedUrl(
 ): string {
   const params = new URLSearchParams();
   params.set("embed", "1");
-  if (opts.autorun === false) params.set("autorun", "0");
+  // Embed default is no auto-run; write the param either way so the link
+  // is explicit and survives future default changes.
+  if (opts.autorun === true) params.set("autorun", "1");
   // Put payload in the hash so long snippets never hit server logs / proxies.
   const hash = new URLSearchParams();
   hash.set("b64", encodeBase64Url(source));
@@ -130,8 +132,10 @@ export function parseEmbedConfig(): EmbedConfig {
   }
 
   const autorunParam = params.get("autorun");
+  // Embed defaults to NO auto-run: show code, fetch nothing until the
+  // user clicks Run. Full app defaults to auto-running the initial example.
   const autorun =
-    autorunParam === null ? true : truthy(autorunParam);
+    autorunParam === null ? !embed : truthy(autorunParam);
 
   return { embed, code, autorun };
 }
