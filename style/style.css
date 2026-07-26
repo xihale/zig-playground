@@ -57,6 +57,8 @@
         'Cascadia Code', 'Fira Code', 'Consolas', monospace;
     --editor-font-size: 16px;
     --editor-line-height: 1.55;
+    /* Pixel line box — keep selection/gutter/content heights on one grid. */
+    --editor-line-box: calc(var(--editor-font-size) * 1.55);
     --editor-code-padding-x: 12px;
     --editor-code-padding-y: 12px;
     --editor-line-number-min-width: 20px;
@@ -422,6 +424,7 @@ main {
 
 .cm-line {
     padding: 0 var(--editor-code-padding-x);
+    line-height: var(--editor-line-height);
 }
 
 .cm-cursor,

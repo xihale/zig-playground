@@ -32,6 +32,7 @@ import {
 import { lintKeymap } from "@codemirror/lint";
 import { zigLanguage } from "@ndim/codemirror-lang-zig";
 import { editorTheme, highlightStyle } from "./theme.ts";
+import { fullLineSelection } from "./full-line-selection.ts";
 import { lspClient } from "./lsp.ts";
 import { examples } from "./examples.ts";
 // @ts-ignore
@@ -55,6 +56,8 @@ const playgroundSetup = [
     },
   }),
   drawSelection(),
+  // Paint selection as full line-box height (CM default uses text metrics only).
+  fullLineSelection(),
   dropCursor(),
   EditorState.allowMultipleSelections.of(true),
   indentOnInput(),
@@ -77,13 +80,65 @@ const playgroundSetup = [
   ]),
 ];
 
+// ─── Source persistence ─────────────────────────────────────────
+// Survive reloads via localStorage. Debounced while typing; also
+// flushed on page hide so a quick tab close still keeps the draft.
+
+const SOURCE_STORAGE_KEY = "zig-playground-source";
+
+function loadSavedSource(): string | null {
+  try {
+    return localStorage.getItem(SOURCE_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function saveSource(source: string) {
+  try {
+    localStorage.setItem(SOURCE_STORAGE_KEY, source);
+  } catch {
+    // Private mode / quota — ignore.
+  }
+}
+
+let saveTimer: ReturnType<typeof setTimeout> | null = null;
+
+function scheduleSave() {
+  if (saveTimer !== null) clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    saveTimer = null;
+    saveSource(editor.state.doc.toString());
+  }, 300);
+}
+
+function flushSave() {
+  if (saveTimer !== null) {
+    clearTimeout(saveTimer);
+    saveTimer = null;
+  }
+  saveSource(editor.state.doc.toString());
+}
+
+window.addEventListener("pagehide", flushSave);
+window.addEventListener("beforeunload", flushSave);
+
 // ─── CodeMirror ──────────────────────────────────────────────────
+
+const blankTemplate = `const std = @import("std");
+
+pub fn main() !void {
+}
+`;
+
+const savedSource = loadSavedSource();
+const initialDoc = savedSource ?? examples[0].code;
 
 const editor = new EditorView({
   extensions: [],
   parent: document.getElementById("editor")!,
   state: EditorState.create({
-    doc: examples[0].code,
+    doc: initialDoc,
     extensions: [
       playgroundSetup,
       editorTheme,
@@ -100,8 +155,10 @@ const editor = new EditorView({
       lspClient.plugin("file:///main.zig"),
       // Auto-run when the user types (or pastes) a semicolon — common end
       // of statement in Zig. Debounced so multi-edit transactions settle.
+      // Also persist the draft for the next visit.
       EditorView.updateListener.of((update) => {
         if (!update.docChanged) return;
+        scheduleSave();
         let typedSemi = false;
         update.changes.iterChanges((_fa, _ta, _fb, _tb, inserted) => {
           if (inserted.toString().includes(";")) typedSemi = true;
@@ -124,12 +181,6 @@ function replaceDoc(text: string) {
 
 // ─── Examples dropdown ──────────────────────────────────────────
 
-const blankTemplate = `const std = @import("std");
-
-pub fn main() !void {
-}
-`;
-
 const exampleSelect = document.getElementById("example-select")! as HTMLSelectElement;
 {
   const blank = document.createElement("option");
@@ -143,8 +194,18 @@ for (const ex of examples) {
   opt.textContent = ex.name;
   exampleSelect.appendChild(opt);
 }
-// Default selection: first real example (Hello World), not Blank.
-exampleSelect.selectedIndex = 1;
+// Restore matching example label when possible; otherwise Blank for
+// custom drafts (or Hello World on a first visit with no save).
+{
+  const matched = examples.find((e) => e.code === initialDoc);
+  if (matched) {
+    exampleSelect.value = matched.name;
+  } else if (initialDoc === blankTemplate || savedSource !== null) {
+    exampleSelect.value = "";
+  } else {
+    exampleSelect.selectedIndex = 1;
+  }
+}
 exampleSelect.addEventListener("change", () => {
   if (exampleSelect.value === "") {
     replaceDoc(blankTemplate);

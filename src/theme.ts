@@ -24,6 +24,8 @@ export const editorTheme = EditorView.theme({
   },
   ".cm-line": {
     lineHeight: "var(--editor-line-height)",
+    // Beat CM base theme (0 2px 0 6px) so horizontal padding stays in design tokens.
+    padding: "0 var(--editor-code-padding-x)",
   },
   ".cm-gutters": {
     fontFamily: "var(--editor-font-mono)",
@@ -31,13 +33,12 @@ export const editorTheme = EditorView.theme({
     lineHeight: "var(--editor-line-height)",
   },
   // Same metrics as .cm-line so number glyphs share the line box.
+  // Avoid display:flex here — it can desync gutter height from content lines.
   ".cm-lineNumbers .cm-gutterElement": {
     fontFamily: "var(--editor-font-mono)",
     fontSize: "var(--editor-font-size)",
     lineHeight: "var(--editor-line-height)",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "flex-end",
+    textAlign: "right",
   },
   ".cm-completionIcon": { display: "none" },
   ".cm-completionLabel": {
