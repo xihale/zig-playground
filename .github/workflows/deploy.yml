@@ -103,6 +103,9 @@ jobs:
           ls -laR public/compilers | head -40
 
       - name: Frontend build + assemble multi-version dist
+        env:
+          # Project Pages: https://xihale.github.io/zig-playground/
+          VITE_BASE: ${{ vars.VITE_BASE || '/zig-playground/' }}
         run: |
           npm ci
           npm run build

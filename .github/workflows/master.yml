@@ -52,6 +52,8 @@ jobs:
           node scripts/package-compiler.mjs --id 0.15.2 --from zig-out
 
       - name: Frontend build + assemble
+        env:
+          VITE_BASE: ${{ vars.VITE_BASE || '/zig-playground/' }}
         run: |
           npm ci
           npm run build

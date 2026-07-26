@@ -1,9 +1,14 @@
 import { defineConfig } from "vite";
 import { resolve } from "node:path";
 
+// GitHub project Pages: set VITE_BASE=/zig-playground/ in CI.
+// Local / custom domain: leave unset (defaults to "/").
+const base = process.env.VITE_BASE || "/";
+
 // Hashed build assets (*.wasm under /compilers, UI chunks, …) are safe to cache.
 // index.html stays short-lived so clients discover new hashes after deploy.
 export default defineConfig({
+  base,
   publicDir: "public",
   plugins: [
     {
@@ -13,7 +18,7 @@ export default defineConfig({
           const path = req.url?.split("?")[0] ?? "";
           if (path === "/" || path.endsWith(".html") || path.endsWith("versions.json")) {
             res.setHeader("Cache-Control", "no-cache");
-          } else if (path.startsWith("/compilers/")) {
+          } else if (path.includes("/compilers/")) {
             // Versioned compiler trees: long cache; replace whole tree on upgrade.
             res.setHeader("Cache-Control", "public, max-age=2592000, immutable");
           } else if (/\.(?:wasm|js|css|a|gz|svg|png|woff2?)$/i.test(path)) {
@@ -32,7 +37,7 @@ export default defineConfig({
             !path.startsWith("/src") &&
             !path.startsWith("/@") &&
             !path.startsWith("/node_modules") &&
-            !path.startsWith("/compilers")
+            !path.includes("/compilers")
           ) {
             req.url = "/index.html";
           }
@@ -44,12 +49,6 @@ export default defineConfig({
   build: {
     // Keep multi-MB wasm/tar as separate files (never inlined).
     assetsInlineLimit: 0,
-  },
-  resolve: {
-    alias: {
-      // Ensure versions.json at repo root is importable from src/
-      // (relative import already works; alias is documentation)
-    },
   },
   root: resolve("."),
 });

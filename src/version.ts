@@ -48,11 +48,21 @@ export function loadVersionsManifest(): VersionsManifest {
   return bundledManifest;
 }
 
-/** First non-empty path segment, ignoring a leading base (empty for root deploy). */
+/** Strip Vite/GitHub Pages base (`/zig-playground/`) so the first remaining segment can be a version id. */
+function pathAfterBase(pathname: string): string {
+  const base = import.meta.env.BASE_URL || "/";
+  if (base === "/") return pathname;
+  const prefix = base.replace(/\/$/, "");
+  if (pathname === prefix || pathname.startsWith(prefix + "/")) {
+    const rest = pathname.slice(prefix.length);
+    return rest.startsWith("/") ? rest : `/${rest}`;
+  }
+  return pathname;
+}
+
+/** First non-empty path segment after the deploy base. */
 export function pathVersionSegment(pathname: string = location.pathname): string | null {
-  const parts = pathname.split("/").filter(Boolean);
-  // GitHub project pages would be /repo/... — we deploy to user/org root or custom domain.
-  // Only treat a segment as a version if it matches a known id (caller checks).
+  const parts = pathAfterBase(pathname).split("/").filter(Boolean);
   return parts[0] ?? null;
 }
 
@@ -72,10 +82,12 @@ export function resolveVersion(
   return { id: entry.id, entry, fromDefault: true, manifest };
 }
 
-/** Canonical path for a version id (`/` for default, `/id/` otherwise). */
+/** Canonical path for a version id (respects Vite `base` / project Pages). */
 export function pathForVersion(id: string, manifest: VersionsManifest): string {
-  if (id === manifest.default) return "/";
-  return `/${id}/`;
+  const base = import.meta.env.BASE_URL || "/";
+  const root = base.endsWith("/") ? base : `${base}/`;
+  if (id === manifest.default) return root;
+  return `${root}${id}/`;
 }
 
 /** Absolute URL prefix for compiler assets of a version. */
