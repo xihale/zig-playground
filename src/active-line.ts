@@ -1,47 +1,52 @@
 /**
  * Active-line chrome only while every selection is empty (plain carets).
- * With a non-empty selection the line wash stacks under the translucent
- * selection color and makes the head line look brighter — suppress it so
- * selected lines read as one uniform band.
+ * With a non-empty selection the wash stacks under translucent selection
+ * and brightens the head line — suppress it so selected lines look uniform.
+ *
+ * Stock CodeMirror Decoration.line (no DOM mutation, no layers). Focus gating is
+ * pure CSS via `.cm-focused` in style.css.
  */
-import { RangeSet } from "@codemirror/state";
+
+import { RangeSet, type Extension } from "@codemirror/state";
 import {
   Decoration,
-  EditorView,
-  GutterMarker,
+  type DecorationSet,
   ViewPlugin,
-  gutterLineClass,
   type ViewUpdate,
+  GutterMarker,
+  gutterLineClass,
+  EditorView,
 } from "@codemirror/view";
 
 const lineDeco = Decoration.line({ class: "cm-activeLine" });
 
-export function highlightActiveLineEmptyOnly() {
+function activeLineDeco(view: EditorView): DecorationSet {
+  if (view.state.selection.ranges.some((r) => !r.empty)) {
+    return Decoration.none;
+  }
+  let lastLineStart = -1;
+  const deco = [];
+  for (const r of view.state.selection.ranges) {
+    const line = view.lineBlockAt(r.head);
+    if (line.from > lastLineStart) {
+      deco.push(lineDeco.range(line.from));
+      lastLineStart = line.from;
+    }
+  }
+  return deco.length ? Decoration.set(deco) : Decoration.none;
+}
+
+export function highlightActiveLineEmptyOnly(): Extension {
   return ViewPlugin.fromClass(
     class {
-      decorations: Decoration;
+      decorations: DecorationSet;
       constructor(view: EditorView) {
-        this.decorations = this.getDeco(view);
+        this.decorations = activeLineDeco(view);
       }
       update(update: ViewUpdate) {
         if (update.docChanged || update.selectionSet) {
-          this.decorations = this.getDeco(update.view);
+          this.decorations = activeLineDeco(update.view);
         }
-      }
-      getDeco(view: EditorView) {
-        if (view.state.selection.ranges.some((r) => !r.empty)) {
-          return Decoration.none;
-        }
-        let lastLineStart = -1;
-        const deco = [];
-        for (const r of view.state.selection.ranges) {
-          const line = view.lineBlockAt(r.head);
-          if (line.from > lastLineStart) {
-            deco.push(lineDeco.range(line.from));
-            lastLineStart = line.from;
-          }
-        }
-        return Decoration.set(deco);
       }
     },
     { decorations: (v) => v.decorations },
@@ -52,7 +57,7 @@ const activeLineGutterMarker = new (class extends GutterMarker {
   elementClass = "cm-activeLineGutter";
 })();
 
-export function highlightActiveLineGutterEmptyOnly() {
+export function highlightActiveLineGutterEmptyOnly(): Extension {
   return gutterLineClass.compute(["selection"], (state) => {
     if (state.selection.ranges.some((r) => !r.empty)) {
       return RangeSet.empty;
@@ -66,6 +71,6 @@ export function highlightActiveLineGutterEmptyOnly() {
         marks.push(activeLineGutterMarker.range(linePos));
       }
     }
-    return RangeSet.of(marks);
+    return marks.length ? RangeSet.of(marks) : RangeSet.empty;
   });
 }

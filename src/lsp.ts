@@ -110,6 +110,10 @@ const semanticTokensPlugin = ViewPlugin.fromClass(
     }
 
     startRequest(plugin: LSPPlugin, view: EditorView): void {
+      // Block replace decorations (Twoslash cuts) fight mark decorations;
+      // embed mode skips semantic tokens and keeps Lezer highlighting.
+      if (!semanticTokensEnabled) return;
+
       if (this.pendingRequest != null) {
         // There is a pending request on an older document state that should
         // be cancelled here.
@@ -162,6 +166,7 @@ const semanticTokensPlugin = ViewPlugin.fromClass(
       plugin: LSPPlugin,
       view: EditorView,
     ): void {
+      if (!semanticTokensEnabled) return;
       if (!semanticTokens) return;
       if (semanticTokens.data.length % 5) return;
 
@@ -215,7 +220,13 @@ const semanticTokensPlugin = ViewPlugin.fromClass(
         });
         builder.add(from, to, decoration);
       }
-      view.dispatch({ effects: [semanticTokensEffect.of(builder.finish())] });
+      // View may already be torn down (iframe navigation) or mid-rebuild.
+      if (!view.dom.isConnected) return;
+      try {
+        view.dispatch({ effects: [semanticTokensEffect.of(builder.finish())] });
+      } catch {
+        // Ignore — a broken docView surfaces as TypeError from dispatch.
+      }
     }
 
     destroy() {
@@ -244,6 +255,16 @@ const semanticTokensState = StateField.define<DecorationSet | null>({
 });
 
 const semanticTokensEffect = StateEffect.define<DecorationSet>({});
+
+/**
+ * When false, skip semantic-token mark decorations (hover/complete still work).
+ * Embed mode turns this off so Twoslash cut block-replaces stay stable.
+ */
+let semanticTokensEnabled = true;
+
+export function setSemanticTokensEnabled(on: boolean) {
+  semanticTokensEnabled = on;
+}
 
 const transport = new ZlsTransport(new ZLSWorker());
 const lspClient = new LSPClient({

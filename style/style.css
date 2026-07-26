@@ -65,7 +65,8 @@
     --editor-line-number-padding-left: 24px;
     --editor-line-number-padding-right: 16px;
     --editor-text-tertiary: var(--body-mid);
-    --editor-surface: rgba(255, 255, 255, 0.035);
+    /* Active line — solid soft lift off pure canvas (alpha washes vanished on #0a0a0a). */
+    --editor-surface: #16181c;
     --editor-focus-ring: rgba(255, 255, 255, 0.14);
 
     /* shared shape language — sharp corners throughout */
@@ -252,9 +253,10 @@ main {
     color: var(--body);
 }
 
-/* Run / Reset — same bare text language as the select */
+/* Run / Reset / Share — same bare text language as the select */
 #run,
-#reset {
+#reset,
+#share-toggle {
     border: none;
     border-radius: 0;
     padding: 0.2rem 0;
@@ -269,9 +271,63 @@ main {
     color: var(--body-mid);
 }
 #run:hover,
-#reset:hover {
+#reset:hover,
+#share-toggle:hover,
+#share-toggle:focus-visible,
+.share-menu.open #share-toggle {
     color: var(--ink);
     background: transparent;
+    outline: none;
+}
+#share-toggle.share-flash {
+    color: var(--status-ok);
+}
+
+/* Share dropdown */
+.share-menu {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+}
+
+.share-dropdown {
+    /* top/right set in JS (fixed) so pane overflow does not clip. */
+    position: fixed;
+    z-index: 40;
+    min-width: 7.5rem;
+    display: flex;
+    flex-direction: column;
+    padding: 0.25rem 0;
+    background: var(--canvas-soft);
+    border: 1px solid var(--hairline-bright);
+    box-shadow: none;
+}
+
+.share-dropdown[hidden] {
+    display: none;
+}
+
+.share-dropdown button {
+    display: block;
+    width: 100%;
+    margin: 0;
+    padding: 0.4rem 0.85rem;
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    color: var(--body-mid);
+    font-family: var(--editor-font-mono);
+    font-size: 0.85rem;
+    line-height: 1.4;
+    text-align: left;
+    cursor: pointer;
+}
+
+.share-dropdown button:hover,
+.share-dropdown button:focus-visible {
+    color: var(--ink);
+    background: rgba(255, 255, 255, 0.06);
+    outline: none;
 }
 
 /* ─── Run status (idle / busy yellow / exit green|red) ─────────── */
@@ -401,6 +457,51 @@ main {
     }
 }
 
+/* ─── Embed mode (blog / docs iframe) ────────────────────────────
+   URL: ?embed=1&code=...  or  ?embed=1#b64=...
+   Only editor + output; toolbars gone; status floats on output. */
+
+html.embed,
+body.embed {
+    height: 100%;
+    overflow: hidden;
+}
+
+body.embed .pane-toolbar {
+    display: none;
+}
+
+body.embed #preview-pane {
+    position: relative;
+}
+
+/* Status chip reparented into #output-container in embed mode. */
+#run-status.embed-status {
+    position: absolute;
+    top: 0.45rem;
+    right: 0.55rem;
+    z-index: 2;
+    padding: 0.15rem 0.45rem;
+    background: color-mix(in srgb, var(--canvas) 82%, transparent);
+    border: 1px solid var(--hairline);
+    pointer-events: none;
+    font-size: 0.75rem;
+    gap: 0.35rem;
+}
+
+/* Interior Twoslash cut gap (leading/trailing cuts hide with no widget). */
+.cm-cut-ellipsis {
+    color: var(--muted, #8b949e);
+    opacity: 0.55;
+    font-family: var(--editor-font-mono, ui-monospace, monospace);
+    font-size: 0.85em;
+    letter-spacing: 0.15em;
+    line-height: var(--editor-line-height, 1.5);
+    padding: 0 0.35em;
+    user-select: none;
+    pointer-events: none;
+}
+
 /* ─── CodeMirror integration ──────────────────────────────────── */
 
 .cm-editor {
@@ -443,9 +544,12 @@ main {
     padding: 0 var(--editor-line-number-padding-right) 0 var(--editor-line-number-padding-left) !important;
 }
 
-.cm-activeLine,
-.cm-activeLineGutter {
-    background: var(--editor-surface) !important;
+/* Active line only while editor focused (CM adds/removes .cm-focused). */
+.cm-editor.cm-focused .cm-line.cm-activeLine {
+    background-color: #1a1c22 !important;
+}
+.cm-editor.cm-focused .cm-activeLineGutter {
+    background-color: #1a1c22 !important;
 }
 
 .cm-focused {

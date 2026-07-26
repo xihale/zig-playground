@@ -15,6 +15,13 @@
                         <select id="example-select" aria-label="Examples"></select>
                     </div>
                     <div class="pane-toolbar-actions">
+                        <div class="share-menu" id="share-menu">
+                            <button type="button" id="share-toggle" aria-haspopup="menu" aria-expanded="false" title="Share">Share</button>
+                            <div class="share-dropdown" id="share-dropdown" role="menu" hidden>
+                                <button type="button" role="menuitem" data-share="link">Link</button>
+                                <button type="button" role="menuitem" data-share="iframe">iframe</button>
+                            </div>
+                        </div>
                         <button type="button" id="reset" title="Reset (Ctrl+R)">Reset</button>
                         <button type="button" id="run">Run</button>
                     </div>
