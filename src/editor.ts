@@ -50,8 +50,8 @@ import {
   resolveVersion,
   pathForVersion,
 } from "./version.ts";
-// @ts-ignore
-import ZigWorker from './workers/zig.ts?worker';
+import { ZigSharedClient } from "./zig-shared-client";
+import type { WorkerMsg } from "./shared-protocol";
 // @ts-ignore
 import RunnerWorker from './workers/runner.ts?worker';
 
@@ -467,14 +467,14 @@ let hasRunOnce = false;
 // Lazy workers: do not fetch zig.wasm / zls.wasm until the first run is
 // requested. Embed (default no autorun) and the full app on a path that
 // does not auto-run stay asset-free until the user actually clicks Run.
-let zigWorker: Worker | null = null;
+let zigWorker: ZigSharedClient | null = null;
 let workersBooted = false;
 function bootWorkersOnce() {
   if (workersBooted) return;
   workersBooted = true;
-  zigWorker = new ZigWorker();
+  zigWorker = new ZigSharedClient();
   zigWorker.onmessage = onZigWorkerMessage;
-  zigWorker.postMessage({ init: { versionId: playgroundVersion.id } });
+  zigWorker.dispatch({ kind: "init", versionId: playgroundVersion.id });
   initZls(playgroundVersion.id);
 }
 
@@ -542,7 +542,7 @@ function startRun(source: string) {
 
   clearOutput();
   // No "compiling" status — keep last status until exit or "running".
-  zigWorker!.postMessage({ run: source });
+  zigWorker!.dispatch({ kind: "run", requestId: String(runGen), versionId: playgroundVersion.id, source });
 }
 
 /** End the current job if still current; drain at most one pending. */
@@ -696,37 +696,37 @@ function noteAutoRunDocChanged(update: ViewUpdate) {
   if (autoRunWanted) scheduleAutoRunSettle();
 }
 
-const onZigWorkerMessage = (ev: MessageEvent) => {
+const onZigWorkerMessage = (msg: WorkerMsg) => {
   // Compiler assets ready (or failed) — open the compile queue.
-  if (ev.data.ready === true) {
-    compilerReady = true;
-    if (pendingSource !== null) {
-      const next = pendingSource;
-      pendingSource = null;
-      startRun(next);
+  if (msg.kind === "ready") {
+    if (msg.ok) {
+      compilerReady = true;
+      if (pendingSource !== null) {
+        const next = pendingSource;
+        pendingSource = null;
+        startRun(next);
+      }
+    } else {
+      compilerReady = false;
+      clearOutput();
+      appendCompile(msg.error ? `${msg.error}\n` : "failed to load compiler\n");
+      setStatus({ kind: "exit", code: 1, crashed: true });
     }
-    return;
-  }
-  if (ev.data.ready === false) {
-    compilerReady = false;
-    clearOutput();
-    appendCompile(ev.data.error ? `${ev.data.error}\n` : "failed to load compiler\n");
-    setStatus({ kind: "exit", code: 1, crashed: true });
     return;
   }
 
   const gen = runGen;
 
   // Compile-time stderr (diagnostics).
-  if (ev.data.stderr) {
-    if (gen !== runGen) return;
-    appendCompile(ev.data.stderr);
+  if (msg.kind === "stderr") {
+    if (msg.requestId !== String(gen)) return;
+    appendCompile(msg.text);
     return;
   }
 
   // A failed compile: the diagnostics are this run's result.
-  if (ev.data.failed) {
-    if (gen !== runGen) return;
+  if (msg.kind === "failed") {
+    if (msg.requestId !== String(gen)) return;
     clearRunningStatusTimer();
     setStatus({ kind: "exit", code: 1, crashed: true });
     completeRun(gen);
@@ -735,8 +735,8 @@ const onZigWorkerMessage = (ev: MessageEvent) => {
 
   // Successful compile. If a newer request is already pending, drop this
   // artifact and start the latest source instead of running stale wasm.
-  if (ev.data.compiled) {
-    if (gen !== runGen) return;
+  if (msg.kind === "compiled") {
+    if (msg.requestId !== String(gen)) return;
 
     if (pendingSource !== null) {
       const next = pendingSource;
@@ -761,7 +761,8 @@ const onZigWorkerMessage = (ev: MessageEvent) => {
     }
     const runnerWorker = new RunnerWorker();
     activeRunner = runnerWorker;
-    runnerWorker.postMessage({ run: ev.data.compiled });
+    // Transfer the compiled wasm bytes to the runner.
+    runnerWorker.postMessage({ run: msg.wasm }, [msg.wasm]);
 
     runnerWorker.onmessage = (rev: MessageEvent) => {
       if (gen !== runGen) return;
