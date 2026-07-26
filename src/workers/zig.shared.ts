@@ -11,13 +11,10 @@ import {
     OpenFile,
     Inode,
     Directory,
+    ConsoleStdout,
 } from "@bjorn3/browser_wasi_shim";
-import {
-    compileWasmAsset,
-    fetchAssetBuffer,
-    getZigArchive,
-    stderrOutput,
-} from "../utils";
+import { wasi as wasi_defs } from "@bjorn3/browser_wasi_shim";
+import { compileWasmAsset, fetchAssetBuffer, getZigArchive } from "../utils";
 import {
     type FlatEntry,
     loadZirCacheEntries,
@@ -25,6 +22,23 @@ import {
 } from "../zir-cache";
 import { compilerAssetUrl } from "../version";
 import type { ClientMsg, WorkerMsg, ZirCacheInfo } from "../shared-protocol";
+
+/**
+ * Per-compile stderr sink that routes writes to the owning port.
+ * Mirrors utils.ts stderrOutput() shape but with a custom emit target,
+ * preserving the { stream: true } decode so multi-write concatenation works.
+ */
+function portStdout(emit: (text: string) => void): ConsoleStdout {
+    const dec = new TextDecoder("utf-8", { fatal: false });
+    const out = new ConsoleStdout((buffer) => {
+        emit(dec.decode(buffer, { stream: true }));
+    });
+    // @ts-ignore — match utils.ts: stub pwrite on a console-type fd.
+    out.fd_pwrite = (_data, _offset) => {
+        return { ret: wasi_defs.ERRNO_SPIPE, nwritten: 0 };
+    };
+    return out;
+}
 
 type Ready = {
     libDirectory: Directory;
@@ -217,6 +231,101 @@ function releaseVersion(versionId: string) {
     }
 }
 
+let currentlyRunning = false; // defensive; the per-compiler chain already serializes.
+
+/**
+ * Compile one source against an assembled compiler. Body lifted from
+ * src/workers/zig.ts:120-180; postMessage → port.postMessage with protocol.
+ *
+ * α policy: before every reply, re-check that this port's currentRequestId
+ * still equals `requestId`. If a newer run superseded it, stop emitting.
+ */
+async function doOneCompile(
+    port: MessagePort,
+    st: PortState,
+    requestId: string,
+    versionId: string,
+    source: string,
+) {
+    if (currentlyRunning) return; // belt-and-suspenders; queue guarantees serial.
+    currentlyRunning = true;
+    try {
+        const c = compilers.get(versionId);
+        if (!c || !c.ready) return; // version evicted before this run started.
+        const { libDirectory, compilerRt, zigModule } = await c.ready;
+
+        // If superseded while waiting on assembly, drop silently.
+        if (st.currentRequestId !== requestId) return;
+
+        const args = [
+            "zig.wasm",
+            "build-exe",
+            "main.zig",
+            "libcompiler_rt.a",
+            "-fno-compiler-rt",
+            "-fno-entry",
+        ];
+        const env: string[] = [];
+        const fds = [
+            new OpenFile(new File([])),
+            portStdout((text) => {
+                if (st.currentRequestId === requestId) {
+                    postToPort(port, { kind: "stderr", requestId, text });
+                }
+            }),
+            portStdout((text) => {
+                if (st.currentRequestId === requestId) {
+                    postToPort(port, { kind: "stderr", requestId, text });
+                }
+            }),
+            new PreopenDirectory(".", new Map<string, Inode>([
+                ["main.zig", new File(new TextEncoder().encode(source))],
+                ["libcompiler_rt.a", new File(new Uint8Array(compilerRt))],
+            ])),
+            new PreopenDirectory("/lib", libDirectory.contents),
+            new PreopenDirectory("/cache", c.cacheContents),
+        ] satisfies Fd[];
+        const wasi = new WASI(args, env, fds, { debug: false });
+
+        const instance = await WebAssembly.instantiate(zigModule, {
+            wasi_snapshot_preview1: wasi.wasiImport,
+        });
+
+        // @ts-ignore
+        const exitCode = wasi.start(instance);
+
+        if (st.currentRequestId !== requestId) return; // superseded mid-run
+
+        if (exitCode == 0) {
+            const cwd = wasi.fds[3] as PreopenDirectory;
+            const mainWasm = cwd.dir.contents.get("main.wasm") as File | undefined;
+            if (mainWasm) {
+                postToPort(port, {
+                    kind: "compiled",
+                    requestId,
+                    wasm: mainWasm.data.buffer as ArrayBuffer,
+                });
+                schedulePersistCache(c);
+            } else {
+                postToPort(port, { kind: "failed", requestId });
+            }
+        } else {
+            postToPort(port, { kind: "failed", requestId });
+        }
+    } catch (err) {
+        if (st.currentRequestId === requestId) {
+            postToPort(port, {
+                kind: "stderr",
+                requestId,
+                text: `${err}\n`,
+            });
+            postToPort(port, { kind: "failed", requestId });
+        }
+    } finally {
+        currentlyRunning = false;
+    }
+}
+
 onconnect = (ev: MessageEvent) => {
     const port: MessagePort = ev.ports[0];
     const st: PortState = { versionId: null, currentRequestId: null };
@@ -229,7 +338,25 @@ onconnect = (ev: MessageEvent) => {
             handleInit(port, st, msg.versionId);
             return;
         }
-        // `run` handled in Task 3.
+        if (msg.kind === "run") {
+            const { requestId, versionId, source } = msg;
+            st.currentRequestId = requestId; // α: supersede any prior run.
+            const c = compilers.get(versionId);
+            if (!c) {
+                // Version never init'd on this port; cannot compile.
+                postToPort(port, {
+                    kind: "stderr",
+                    requestId,
+                    text: `version ${versionId} not initialized\n`,
+                });
+                postToPort(port, { kind: "failed", requestId });
+                return;
+            }
+            c.compileChain = c.compileChain.then(() =>
+                doOneCompile(port, st, requestId, versionId, source),
+            );
+            return;
+        }
     };
 
     port.onmessageerror = () => {
