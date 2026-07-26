@@ -121,7 +121,7 @@ export function parseEmbedConfig(): EmbedConfig {
 
   let code: string | null = null;
 
-  const b64 = params.get("b64") ?? params.get("codeb64");
+  const b64 = params.get("b64");
   if (b64) {
     code = decodeBase64Url(b64);
   } else if (params.has("code")) {

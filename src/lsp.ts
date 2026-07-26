@@ -36,46 +36,34 @@ class ZlsTransport implements Transport {
   }
 
   private messageHandler = (ev: MessageEvent) => {
-    const data = JSON.parse(ev.data);
-
-    if (data.method == "window/logMessage") {
-      if (!data.stderr) {
+    // ZLS posts JSON strings; only re-parse logMessage to route levels.
+    // Everything else is forwarded as-is (no parse → stringify round-trip).
+    let forward: string = typeof ev.data === "string" ? ev.data : String(ev.data);
+    try {
+      const data = JSON.parse(forward);
+      if (data.method == "window/logMessage" && data.params && !data.stderr) {
+        const msg = data.params.message;
         switch (data.params.type) {
-          case 5:
-            console.debug("ZLS --- ", data.params.message);
-            break;
-          case 4:
-            console.log("ZLS --- ", data.params.message);
-            break;
-          case 3:
-            console.info("ZLS --- ", data.params.message);
-            break;
-          case 2:
-            console.warn("ZLS --- ", data.params.message);
-            break;
+          case 5: console.debug("ZLS --- ", msg); break;
+          case 4: console.log("ZLS --- ", msg); break;
+          case 3: console.info("ZLS --- ", msg); break;
+          case 2: console.warn("ZLS --- ", msg); break;
           case 1:
-            console.error("ZLS --- ", data.params.message);
-            break;
-          default:
-            console.error(data.params.message);
-            break;
+          default: console.error("ZLS --- ", msg); break;
         }
+        // Don't feed window/logMessage into the LSP client.
+        return;
       }
-    } else {
-      console.debug("LSP <<-", data);
+    } catch {
+      // forward raw
     }
-
-    const stringified = JSON.stringify(data);
     for (const handler of this.handlers) {
-      handler(stringified);
+      handler(forward);
     }
   };
 
   send(message: string) {
-    console.debug("LSP ->>", JSON.parse(message));
-    if (this.worker) {
-      this.worker.postMessage(message);
-    }
+    this.worker?.postMessage(message);
   }
 }
 
