@@ -239,7 +239,7 @@ const semanticTokensState = StateField.define<DecorationSet | null>({
 const semanticTokensEffect = StateEffect.define<DecorationSet>({});
 
 // Cut embeds: outer transport rewrites full-program content + positions.
-const zlsWorker = new ZlsWorker();
+const zlsWorker = new ZLSWorker();
 const transport = wrapTransportForCuts(new ZlsTransport(zlsWorker));
 const lspClient = new LSPClient({
   highlightLanguage(name) {
