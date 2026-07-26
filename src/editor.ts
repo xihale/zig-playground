@@ -36,7 +36,7 @@ import {
   highlightActiveLineGutterEmptyOnly,
 } from "./active-line.ts";
 import { lspClient, initZls } from "./lsp.ts";
-import { examples } from "./examples.ts";
+import { examplesFor } from "./examples.ts";
 import {
   parseEmbedConfig,
   buildShareUrl,
@@ -67,6 +67,8 @@ if (embedConfig.embed) {
 // Resolve compiler version from URL path before workers fetch wasm.
 const versionsManifest = loadVersionsManifest();
 const playgroundVersion = resolveVersion(versionsManifest);
+/** Examples for the active compiler path (0.15.2 / 0.16.0 / master, …). */
+const examples = examplesFor(playgroundVersion.id);
 const versionSelect = document.getElementById("version-select") as HTMLSelectElement | null;
 if (versionSelect) {
   for (const v of versionsManifest.versions) {
