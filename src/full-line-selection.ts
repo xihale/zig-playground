@@ -1,12 +1,13 @@
 /**
  * CodeMirror's default selection layer sizes rects to text metrics, so with
  * line-height > 1 the line box half-leading is left unpainted — a visible gap
- * at the top/bottom of a selected line. Expand single-line rects to the full
- * line block.
+ * at the top/bottom of a selected line.
  *
- * Multi-line selections emit a tall "between" rect that already covers middle
- * lines (including half-leading). Those must be left alone: mapping them by
- * midpoint collapses them to one line and leaves every other row empty.
+ * Strategy:
+ *  1. Expand short (single-line) rects to the full line block.
+ *  2. Shrink tall multi-line "bridge" rects so they do not overlap those
+ *     expanded ends. Overlap with a translucent selection color double-paints
+ *     and shows up as a bright horizontal band between lines.
  */
 import { EditorView, RectangleMarker, layer } from "@codemirror/view";
 import type { Extension } from "@codemirror/state";
@@ -30,24 +31,24 @@ export function fullLineSelection(): Extension {
                 for (const range of view.state.selection.ranges) {
                     if (range.empty) continue;
 
-                    for (const piece of RectangleMarker.forRange(
+                    const pieces = RectangleMarker.forRange(
                         view,
                         "cm-selectionBackground",
                         range,
-                    )) {
-                        // Zero-width caret leftovers from range ends — drop them.
-                        if (piece.width === 0) continue;
+                    ).filter((p) => p.width !== 0);
 
-                        // Tall rects already bridge full line boxes between the
-                        // first and last lines of a multi-line selection.
+                    const expandedShort: RectangleMarker[] = [];
+                    const tall: RectangleMarker[] = [];
+
+                    for (const piece of pieces) {
                         if (piece.height > lineH) {
-                            out.push(piece);
+                            tall.push(piece);
                             continue;
                         }
 
                         const midDocY = piece.top + piece.height / 2 - padTop;
                         const block = view.lineBlockAtHeight(Math.max(0, midDocY));
-                        out.push(
+                        expandedShort.push(
                             new RectangleMarker(
                                 "cm-selectionBackground",
                                 piece.left,
@@ -57,6 +58,34 @@ export function fullLineSelection(): Extension {
                             ),
                         );
                     }
+
+                    // Bridge rects already cover middle line boxes; clip them
+                    // away from the (now full-height) first/last line pieces so
+                    // alpha does not stack into a bright seam.
+                    for (const piece of tall) {
+                        let top = piece.top;
+                        let bot = piece.top + piece.height;
+                        for (const s of expandedShort) {
+                            const sBot = s.top + s.height;
+                            // Short piece above this bridge → start below it.
+                            if (s.top <= top + 0.5 && sBot > top) top = sBot;
+                            // Short piece below this bridge → end above it.
+                            if (sBot >= bot - 0.5 && s.top < bot) bot = s.top;
+                        }
+                        if (bot - top > 0.5) {
+                            out.push(
+                                new RectangleMarker(
+                                    "cm-selectionBackground",
+                                    piece.left,
+                                    top,
+                                    piece.width,
+                                    bot - top,
+                                ),
+                            );
+                        }
+                    }
+
+                    out.push(...expandedShort);
                 }
                 return out;
             },

@@ -3,13 +3,11 @@ import {
   keymap,
   EditorView,
   lineNumbers,
-  highlightActiveLineGutter,
   highlightSpecialChars,
   drawSelection,
   dropCursor,
   rectangularSelection,
   crosshairCursor,
-  highlightActiveLine,
 } from "@codemirror/view";
 import { formatDocument } from "@codemirror/lsp-client";
 import { history, defaultKeymap, historyKeymap, indentWithTab } from "@codemirror/commands";
@@ -33,6 +31,10 @@ import { lintKeymap } from "@codemirror/lint";
 import { zigLanguage } from "@ndim/codemirror-lang-zig";
 import { editorTheme, highlightStyle } from "./theme.ts";
 import { fullLineSelection } from "./full-line-selection.ts";
+import {
+  highlightActiveLineEmptyOnly,
+  highlightActiveLineGutterEmptyOnly,
+} from "./active-line.ts";
 import { lspClient } from "./lsp.ts";
 import { examples } from "./examples.ts";
 // @ts-ignore
@@ -44,7 +46,8 @@ import RunnerWorker from './workers/runner.ts?worker';
 // different optical Y offsets — a single translate can't fix both).
 const playgroundSetup = [
   lineNumbers(),
-  highlightActiveLineGutter(),
+  // Active line only for empty carets — non-empty selection stays uniform.
+  highlightActiveLineGutterEmptyOnly(),
   highlightSpecialChars(),
   history(),
   foldGutter({
@@ -67,7 +70,7 @@ const playgroundSetup = [
   autocompletion(),
   rectangularSelection(),
   crosshairCursor(),
-  highlightActiveLine(),
+  highlightActiveLineEmptyOnly(),
   highlightSelectionMatches(),
   keymap.of([
     ...closeBracketsKeymap,
