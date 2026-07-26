@@ -2,7 +2,7 @@ name: Deploy
 
 on:
   push:
-    branches: ["main"]
+    branches: ["main", "master"]
   pull_request:
   workflow_dispatch:
 
@@ -11,6 +11,7 @@ permissions:
   pages: write
   id-token: write
 
+# Large wasm/tar never enter git — this job builds and deploys them to Pages only.
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -27,10 +28,38 @@ jobs:
       - name: Install binaryen
         run: |
           sudo apt-get update
-          sudo apt-get install binaryen
+          sudo apt-get install -y binaryen
 
-      - run: |
-          zig build -Drelease -Dwasm-opt
+      # Sibling zig wasm tree (local path dep in build.zig.zon). Override with repo secrets if needed.
+      - name: Checkout zig-wasm (compiler source)
+        uses: actions/checkout@v4
+        continue-on-error: true
+        with:
+          repository: ${{ vars.ZIG_WASM_REPO || 'ziglang/zig' }}
+          ref: ${{ vars.ZIG_WASM_REF || '0.15.2' }}
+          path: zig-wasm-src
+
+      - name: Link zig-wasm dependency
+        run: |
+          if [ -d zig-wasm-src ]; then
+            rm -rf ../zig-wasm
+            ln -s "$GITHUB_WORKSPACE/zig-wasm-src" ../zig-wasm
+            ls -la ../zig-wasm | head
+          elif [ -d ../zig-wasm ]; then
+            echo "using existing ../zig-wasm"
+          else
+            echo "::warning::No zig-wasm source — compiler package step may fail"
+          fi
+
+      - name: Build wasm compilers (stable ids)
+        run: |
+          set -euo pipefail
+          zig build -Doptimize=ReleaseSmall -Dwasm-opt
+          # Default stable from versions.json (skip schedule-only master here if not built)
+          node scripts/package-compiler.mjs --id 0.15.2 --from zig-out
+
+      - name: Frontend build + assemble multi-version dist
+        run: |
           npm ci
           npm run build
 
@@ -39,4 +68,4 @@ jobs:
           path: "dist/"
 
       - uses: actions/deploy-pages@v4
-        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'

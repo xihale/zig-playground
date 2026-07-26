@@ -1,21 +1,25 @@
 import { WASI, PreopenDirectory, Fd, File, OpenFile, Inode, Directory } from "@bjorn3/browser_wasi_shim";
-import { compileWasmAsset, fetchAssetBuffer, getLatestZigArchive, stderrOutput } from "../utils";
+import { compileWasmAsset, fetchAssetBuffer, getZigArchive, stderrOutput } from "../utils";
 import {
     type FlatEntry,
     loadZirCacheEntries,
     saveZirCacheEntries,
-    ZIR_CACHE_ZIG_VERSION,
 } from "../zir-cache";
+import { compilerAssetUrl } from "../version";
 
 type Ready = {
     libDirectory: Directory;
     compilerRt: ArrayBuffer;
     zigModule: WebAssembly.Module;
     zirCache: { files: number; bytes: number } | null;
+    versionId: string;
 };
 
 /** Shared across compiles: Zig's global cache (/cache) for ZIR of std, etc. */
 const cacheContents = new Map<string, Inode>();
+
+/** Active compiler version — set by main-thread init message. */
+let versionId: string | null = null;
 
 /** Last successfully persisted size — skip redundant IDB writes. */
 let lastSavedBytes = 0;
@@ -60,12 +64,14 @@ function hydrateCache(root: Map<string, Inode>, entries: FlatEntry[]): void {
 }
 
 function schedulePersistCache() {
+    if (!versionId) return;
+    const id = versionId;
     persistChain = persistChain
         .then(async () => {
             const entries = flattenCache(cacheContents);
             const bytes = entries.reduce((s, e) => s + e.data.byteLength, 0);
             if (bytes === 0 || bytes === lastSavedBytes) return;
-            const saved = await saveZirCacheEntries(entries, ZIR_CACHE_ZIG_VERSION);
+            const saved = await saveZirCacheEntries(entries, id);
             if (saved) lastSavedBytes = saved.bytes;
         })
         .catch(() => {
@@ -76,14 +82,18 @@ function schedulePersistCache() {
 let readyPromise: Promise<Ready> | null = null;
 
 function ensureReady(): Promise<Ready> {
+    if (!versionId) {
+        return Promise.reject(new Error("zig worker: missing init.versionId"));
+    }
+    const id = versionId;
     if (!readyPromise) {
         readyPromise = (async (): Promise<Ready> => {
             // Load ZIR cache in parallel with compiler assets (wall time ≈ max of both).
             const [zirHit, libDirectory, compilerRt, zigModule] = await Promise.all([
-                loadZirCacheEntries(ZIR_CACHE_ZIG_VERSION),
-                getLatestZigArchive(),
-                fetchAssetBuffer(new URL("../../zig-out/libcompiler_rt.a", import.meta.url)),
-                compileWasmAsset(new URL("../../zig-out/bin/zig.wasm", import.meta.url)),
+                loadZirCacheEntries(id),
+                getZigArchive(id),
+                fetchAssetBuffer(compilerAssetUrl(id, "libcompiler_rt.a")),
+                compileWasmAsset(compilerAssetUrl(id, "zig.wasm")),
             ]);
 
             let zirCache: Ready["zirCache"] = null;
@@ -93,17 +103,17 @@ function ensureReady(): Promise<Ready> {
                 zirCache = { files: zirHit.files, bytes: zirHit.bytes };
             }
 
-            return { libDirectory, compilerRt, zigModule, zirCache };
+            return { libDirectory, compilerRt, zigModule, zirCache, versionId: id };
         })();
     }
     return readyPromise;
 }
 
-// Warm std + compiler_rt + zig.wasm (+ optional ZIR restore) as soon as the worker starts.
-// UI shows "loading" until this resolves; compile messages are only posted after.
-ensureReady()
-    .then((r) => postMessage({ ready: true, zirCache: r.zirCache }))
-    .catch((err) => postMessage({ ready: false, error: `${err}` }));
+function startWarm() {
+    ensureReady()
+        .then((r) => postMessage({ ready: true, zirCache: r.zirCache, versionId: r.versionId }))
+        .catch((err) => postMessage({ ready: false, error: `${err}` }));
+}
 
 let currentlyRunning = false;
 
@@ -170,7 +180,15 @@ async function run(source: string) {
 }
 
 onmessage = (event) => {
+    if (event.data?.init?.versionId) {
+        versionId = event.data.init.versionId as string;
+        cacheContents.clear();
+        lastSavedBytes = 0;
+        readyPromise = null;
+        startWarm();
+        return;
+    }
     if (event.data.run) {
         run(event.data.run);
     }
-}
+};

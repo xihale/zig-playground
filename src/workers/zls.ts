@@ -1,5 +1,6 @@
 import { WASI, PreopenDirectory, Fd, ConsoleStdout } from "@bjorn3/browser_wasi_shim";
-import { compileWasmAsset, getLatestZigArchive } from "../utils";
+import { compileWasmAsset, getZigArchive } from "../utils";
+import { compilerAssetUrl } from "../version";
 
 class Stdio extends Fd {
     constructor() {
@@ -15,12 +16,13 @@ class Stdio extends Fd {
     }
 }
 
-let instance: WebAssembly.Instance;
+let instance: WebAssembly.Instance | null = null;
 let bufferedMessages: string[] = [];
+let bootStarted = false;
 
 type ZigPtr = number;
 
-interface ZLSWasmExports {
+interface ZlsWasmExports {
     memory: WebAssembly.Memory,
 
     createServer(): void,
@@ -32,8 +34,12 @@ interface ZLSWasmExports {
 }
 
 function sendMessage(message: string) {
+    if (!instance) {
+        bufferedMessages.push(message);
+        return;
+    }
     const inputMessageBuffer = new TextEncoder().encode(message);
-    const exports = instance.exports as unknown as ZLSWasmExports;
+    const exports = instance.exports as unknown as ZlsWasmExports;
     const ptr = exports.allocMessage(inputMessageBuffer.length);
     new Uint8Array(exports.memory.buffer).set(inputMessageBuffer, ptr);
     exports.call();
@@ -47,43 +53,55 @@ function sendMessage(message: string) {
     }
 }
 
+async function boot(versionId: string) {
+    if (bootStarted) return;
+    bootStarted = true;
+
+    try {
+        const libDirectory = await getZigArchive(versionId);
+
+        const args = ["zls.wasm"];
+        const env: string[] = [];
+        const fds = [
+            new Stdio(), // stdin
+            new Stdio(), // stdout
+            ConsoleStdout.lineBuffered((line) => postMessage(JSON.stringify({ stderr: line }))), // stderr
+            new PreopenDirectory(".", new Map([])),
+            new PreopenDirectory("/lib", libDirectory.contents),
+            new PreopenDirectory("/cache", new Map()),
+        ];
+        const wasi = new WASI(args, env, fds, { debug: false });
+
+        const zlsModule = await compileWasmAsset(compilerAssetUrl(versionId, "zls.wasm"));
+        const localInstance = await WebAssembly.instantiate(zlsModule, {
+            "wasi_snapshot_preview1": wasi.wasiImport,
+        });
+
+        // @ts-ignore
+        wasi.inst = localInstance;
+
+        // @ts-ignore
+        localInstance.exports.createServer();
+
+        instance = localInstance;
+
+        for (const bufferedMessage of bufferedMessages) {
+            sendMessage(bufferedMessage);
+        }
+        bufferedMessages = [];
+        postMessage(JSON.stringify({ ready: true, versionId }));
+    } catch (err) {
+        postMessage(JSON.stringify({ ready: false, error: `${err}` }));
+    }
+}
+
 onmessage = (event) => {
-    if (instance) {
+    if (event.data && typeof event.data === "object" && event.data.init?.versionId) {
+        boot(event.data.init.versionId as string);
+        return;
+    }
+    // LSP JSON-RPC strings
+    if (typeof event.data === "string") {
         sendMessage(event.data);
-    } else {
-        bufferedMessages.push(event.data);
     }
 };
-
-(async () => {
-    const libDirectory = await getLatestZigArchive();
-
-    const args = ["zls.wasm"];
-    const env: string[] = [];
-    const fds = [
-        new Stdio(), // stdin
-        new Stdio(), // stdout
-        ConsoleStdout.lineBuffered((line) => postMessage(JSON.stringify({ stderr: line }))), // stderr
-        new PreopenDirectory(".", new Map([])),
-        new PreopenDirectory("/lib", libDirectory.contents),
-        new PreopenDirectory("/cache", new Map()),
-    ];
-    const wasi = new WASI(args, env, fds, { debug: false });
-
-    const zlsModule = await compileWasmAsset(new URL("../../zig-out/bin/zls.wasm", import.meta.url));
-    const localInstance = await WebAssembly.instantiate(zlsModule, {
-        "wasi_snapshot_preview1": wasi.wasiImport,
-    });
-
-    // @ts-ignore
-    wasi.inst = localInstance;
-
-    // @ts-ignore
-    localInstance.exports.createServer();
-
-    instance = localInstance;
-
-    for (const bufferedMessage of bufferedMessages) {
-        sendMessage(bufferedMessage);
-    }
-})();

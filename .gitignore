@@ -5,3 +5,9 @@ repos
 .zig-cache
 zig-pkg
 zig-out
+
+# Compiler binaries — package via scripts/package-compiler.mjs (CI/local only)
+public/compilers/**
+!public/compilers/.gitkeep
+**/*.wasm
+!**/node_modules/**/*.wasm

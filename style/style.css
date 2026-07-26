@@ -213,6 +213,7 @@ main {
     flex-shrink: 0;
 }
 
+#version-select,
 #example-select {
     height: auto;
     max-width: 16rem;
@@ -234,12 +235,19 @@ main {
     -webkit-appearance: none;
     appearance: none;
 }
+#version-select {
+    max-width: 8rem;
+    color: var(--ink);
+}
+#version-select:hover,
+#version-select:focus,
 #example-select:hover,
 #example-select:focus {
     color: var(--ink);
     outline: none;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%23ffffff' d='M1 1l4 4 4-4'/%3E%3C/svg%3E");
 }
+#version-select option,
 #example-select option {
     background: var(--canvas-soft);
     color: var(--body);

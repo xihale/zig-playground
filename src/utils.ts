@@ -1,35 +1,42 @@
 import { untar } from "@andrewbranch/untar.js";
 import { Directory, File, ConsoleStdout, wasi as wasi_defs } from "@bjorn3/browser_wasi_shim";
+import { compilerAssetUrl } from "./version";
 
 export async function fetchAssetBuffer(url: URL | string): Promise<ArrayBuffer> {
     const href = typeof url === "string" ? url : url.href;
-    return (await fetch(href)).arrayBuffer();
+    const response = await fetch(href);
+    if (!response.ok) {
+        throw new Error(`fetch ${href}: HTTP ${response.status}`);
+    }
+    return response.arrayBuffer();
 }
 
 export async function compileWasmAsset(url: URL | string): Promise<WebAssembly.Module> {
     const href = typeof url === "string" ? url : url.href;
     // Content-hashed build assets + Cache-Control handle caching; no Cache Storage layer.
-    return WebAssembly.compileStreaming(fetch(href));
-}
-
-/** Memoized so each worker only fetch/gunzip/untar std once. */
-let archivePromise: Promise<Directory> | null = null;
-
-export function getLatestZigArchive(): Promise<Directory> {
-    if (!archivePromise) {
-        archivePromise = loadZigArchive();
+    const response = await fetch(href);
+    if (!response.ok) {
+        throw new Error(`fetch ${href}: HTTP ${response.status}`);
     }
-    return archivePromise;
+    return WebAssembly.compileStreaming(response);
 }
 
-async function loadZigArchive(): Promise<Directory> {
-    const response = await fetch(new URL("../zig-out/zig.tar.gz", import.meta.url));
+/** Load std lib tarball for a specific compiler version id. */
+export async function getZigArchive(versionId: string): Promise<Directory> {
+    return loadZigArchive(compilerAssetUrl(versionId, "zig.tar.gz"));
+}
+
+async function loadZigArchive(tarUrl: string): Promise<Directory> {
+    const response = await fetch(tarUrl);
+    if (!response.ok) {
+        throw new Error(`fetch ${tarUrl}: HTTP ${response.status}`);
+    }
     let arrayBuffer = await response.arrayBuffer();
     const magicNumber = new Uint8Array(arrayBuffer).slice(0, 2);
     if (magicNumber[0] == 0x1F && magicNumber[1] == 0x8B) {
         const ds = new DecompressionStream("gzip");
-        const response = new Response(new Response(arrayBuffer).body!.pipeThrough(ds));
-        arrayBuffer = await response.arrayBuffer();
+        const gunzipped = new Response(new Response(arrayBuffer).body!.pipeThrough(ds));
+        arrayBuffer = await gunzipped.arrayBuffer();
     }
     const entries = untar(arrayBuffer);
 

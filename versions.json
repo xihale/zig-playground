@@ -1,0 +1,14 @@
+{
+  "default": "0.15.2",
+  "versions": [
+    {
+      "id": "0.15.2",
+      "label": "0.15.2"
+    },
+    {
+      "id": "master",
+      "label": "master",
+      "schedule": "3d"
+    }
+  ]
+}

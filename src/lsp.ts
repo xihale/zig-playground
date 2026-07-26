@@ -239,7 +239,8 @@ const semanticTokensState = StateField.define<DecorationSet | null>({
 const semanticTokensEffect = StateEffect.define<DecorationSet>({});
 
 // Cut embeds: outer transport rewrites full-program content + positions.
-const transport = wrapTransportForCuts(new ZlsTransport(new ZLSWorker()));
+const zlsWorker = new ZlsWorker();
+const transport = wrapTransportForCuts(new ZlsTransport(zlsWorker));
 const lspClient = new LSPClient({
   highlightLanguage(name) {
     if (name == "zig") return zigLanguage;
@@ -264,4 +265,10 @@ const lspClient = new LSPClient({
     } satisfies LSPClientExtension,
   ],
 }).connect(transport);
+
+/** Tell the ZLS worker which paired compiler tree to load (`/compilers/<id>/`). */
+export function initZls(versionId: string) {
+  zlsWorker.postMessage({ init: { versionId } });
+}
+
 export { lspClient };

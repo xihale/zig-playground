@@ -3,7 +3,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && node scripts/assemble-dist.mjs",
+    "package:compiler": "node scripts/package-compiler.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

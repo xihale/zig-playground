@@ -1,18 +1,15 @@
 /**
  * Persist Zig's WASI /cache (ZIR digests) across page reloads via IndexedDB.
  *
- * Storage: one packed blob (~35 MiB after first Hello-World-sized compile) plus
- * a small meta row keyed by zigVersion. Invalidates wholesale on version change.
+ * Storage: one packed blob per compiler version id, plus a meta row.
+ * Keys: `blob:<versionId>`, `meta:<versionId>` so master / 0.15.2 never share ZIR.
  *
  * NOTE: Do not construct browser_wasi_shim File/Directory here — Vite can give
  * the worker two module instances, and Zig's FS layer uses `instanceof` checks.
  * Callers pass entries in/out as plain {path, data}; hydrate with their File class.
  */
 
-/** Must match the Zig/std the playground ships; bump when upgrading. */
-export const ZIR_CACHE_ZIG_VERSION = "0.15.2";
-
-const DB_NAME = "zig-playground-zir-v1";
+const DB_NAME = "zig-playground-zir-v2";
 const DB_VERSION = 1;
 const STORE = "kv";
 
@@ -42,6 +39,14 @@ function txDone(tx: IDBTransaction): Promise<void> {
         tx.onerror = () => reject(tx.error ?? new Error("idb tx error"));
         tx.onabort = () => reject(tx.error ?? new Error("idb tx abort"));
     });
+}
+
+function metaKey(versionId: string): string {
+    return `meta:${versionId}`;
+}
+
+function blobKey(versionId: string): string {
+    return `blob:${versionId}`;
 }
 
 /** Binary pack: [u32 pathLen][path utf8][u32 dataLen][data]… */
@@ -98,12 +103,10 @@ export type LoadZirResult = {
 };
 
 /**
- * Load packed ZIR blob if meta.zigVersion matches.
+ * Load packed ZIR blob for a compiler version id.
  * Returns plain entries for the caller to hydrate with its File/Directory classes.
  */
-export async function loadZirCacheEntries(
-    zigVersion: string = ZIR_CACHE_ZIG_VERSION,
-): Promise<LoadZirResult | null> {
+export async function loadZirCacheEntries(versionId: string): Promise<LoadZirResult | null> {
     try {
         const db = await openDb();
         try {
@@ -111,14 +114,14 @@ export async function loadZirCacheEntries(
             const store = tx.objectStore(STORE);
             // Issue both gets BEFORE any await — IDB txs autoclose across awaits.
             const metaP = idbReq<{ key: string; zigVersion: string; bytes: number; files: number }>(
-                store.get("meta"),
+                store.get(metaKey(versionId)),
             );
-            const blobP = idbReq<{ key: string; data: ArrayBuffer }>(store.get("blob"));
+            const blobP = idbReq<{ key: string; data: ArrayBuffer }>(store.get(blobKey(versionId)));
             const done = txDone(tx);
             const [meta, blob] = await Promise.all([metaP, blobP]);
             await done;
 
-            if (!meta || meta.zigVersion !== zigVersion || !blob?.data) {
+            if (!meta || meta.zigVersion !== versionId || !blob?.data) {
                 return null;
             }
 
@@ -137,10 +140,10 @@ export async function loadZirCacheEntries(
     }
 }
 
-/** Persist flat entries as a single blob. */
+/** Persist flat entries as a single blob keyed by version id. */
 export async function saveZirCacheEntries(
     entries: FlatEntry[],
-    zigVersion: string = ZIR_CACHE_ZIG_VERSION,
+    versionId: string,
 ): Promise<LoadZirResult | null> {
     try {
         if (entries.length === 0) return null;
@@ -151,12 +154,12 @@ export async function saveZirCacheEntries(
             const tx = db.transaction(STORE, "readwrite");
             const store = tx.objectStore(STORE);
             store.put({
-                key: "blob",
+                key: blobKey(versionId),
                 data: packed,
             });
             store.put({
-                key: "meta",
-                zigVersion,
+                key: metaKey(versionId),
+                zigVersion: versionId,
                 files: entries.length,
                 bytes: packed.byteLength,
                 savedAt: Date.now(),

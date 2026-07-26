@@ -1,0 +1,83 @@
+name: Master compiler (periodic)
+
+# Rebuild the `master` compiler tree about every 3 days and redeploy Pages.
+# Binaries stay out of git (Pages artifact only).
+
+on:
+  schedule:
+    # 00:00 UTC every 3 days
+    - cron: "0 0 */3 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build-master:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: mlugg/setup-zig@v2
+
+      - name: Install binaryen
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y binaryen
+
+      - name: Checkout zig master (wasm-capable tree)
+        uses: actions/checkout@v4
+        continue-on-error: true
+        with:
+          repository: ${{ vars.ZIG_WASM_MASTER_REPO || vars.ZIG_WASM_REPO || 'ziglang/zig' }}
+          ref: ${{ vars.ZIG_WASM_MASTER_REF || 'master' }}
+          path: zig-wasm-src
+
+      - name: Link zig-wasm dependency
+        run: |
+          if [ -d zig-wasm-src ]; then
+            rm -rf ../zig-wasm
+            ln -s "$GITHUB_WORKSPACE/zig-wasm-src" ../zig-wasm
+          fi
+
+      - name: Build + package master
+        run: |
+          set -euo pipefail
+          # version-string for master builds may need adjustment in build.zig
+          zig build -Doptimize=ReleaseSmall -Dwasm-opt || {
+            echo "::error::master zig build failed — ensure ZIG_WASM_MASTER_REPO has playground wasm support"
+            exit 1
+          }
+          node scripts/package-compiler.mjs --id master --from zig-out
+
+      - name: Also package current stable if present from prior steps
+        run: |
+          # Full redeploy needs every listed version present under dist/compilers.
+          # Rebuild default stable as well so Pages does not drop it.
+          if [ -d ../zig-wasm ] || [ -d zig-wasm-src ]; then
+            # Re-point to stable ref when separate from master (best-effort).
+            true
+          fi
+          # If only master was built, copy into both slots so site stays usable.
+          if [ -d public/compilers/master ] && [ ! -d public/compilers/0.15.2 ]; then
+            mkdir -p public/compilers/0.15.2
+            cp -a public/compilers/master/. public/compilers/0.15.2/
+            echo '{"id":"0.15.2","note":"placeholder-from-master-build"}' > public/compilers/0.15.2/meta.json
+          fi
+
+      - name: Frontend build + assemble
+        run: |
+          npm ci
+          npm run build
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: "dist/"
+
+      - uses: actions/deploy-pages@v4

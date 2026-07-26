@@ -35,7 +35,7 @@ import {
   highlightActiveLineEmptyOnly,
   highlightActiveLineGutterEmptyOnly,
 } from "./active-line.ts";
-import { lspClient } from "./lsp.ts";
+import { lspClient, initZls } from "./lsp.ts";
 import { examples } from "./examples.ts";
 import {
   parseEmbedConfig,
@@ -44,6 +44,11 @@ import {
 } from "./embed.ts";
 import { bindCuts, resolveCompileSource, type CutBinding } from "./cut.ts";
 import { setCutLspBridge } from "./cut-lsp.ts";
+import {
+  loadVersionsManifest,
+  resolveVersion,
+  pathForVersion,
+} from "./version.ts";
 // @ts-ignore
 import ZigWorker from './workers/zig.ts?worker';
 // @ts-ignore
@@ -58,6 +63,34 @@ if (embedConfig.embed) {
   document.body.classList.add("embed");
   document.documentElement.classList.add("embed");
 }
+
+// Resolve compiler version from URL path before workers fetch wasm.
+const versionsManifest = loadVersionsManifest();
+const playgroundVersion = resolveVersion(versionsManifest);
+const versionSelect = document.getElementById("version-select") as HTMLSelectElement | null;
+if (versionSelect) {
+  for (const v of versionsManifest.versions) {
+    const opt = document.createElement("option");
+    opt.value = v.id;
+    opt.textContent = v.label;
+    if (v.id === playgroundVersion.id) opt.selected = true;
+    versionSelect.appendChild(opt);
+  }
+  if (embedConfig.embed) {
+    versionSelect.hidden = true;
+  } else {
+    versionSelect.addEventListener("change", () => {
+      const next = versionSelect.value;
+      if (next === playgroundVersion.id) return;
+      const path = pathForVersion(next, versionsManifest);
+      const url = new URL(path, location.origin);
+      url.search = location.search;
+      url.hash = location.hash;
+      location.assign(url.href);
+    });
+  }
+}
+document.title = `Zig Playground (${playgroundVersion.entry.label})`;
 
 // basicSetup clone with custom fold markers (open ⌄ vs closed › need
 // different optical Y offsets — a single translate can't fix both).
@@ -398,6 +431,10 @@ function appendRun(text: string) {
 let compilerReady = false;
 
 let zigWorker = new ZigWorker();
+// Load /compilers/<id>/… for this path; ZLS uses the same paired tree.
+zigWorker.postMessage({ init: { versionId: playgroundVersion.id } });
+initZls(playgroundVersion.id);
+
 /** Monotonic id for the in-flight job; stale worker/runner msgs ignored. */
 let runGen = 0;
 /** True while compile or run is in flight (not during asset loading). */
