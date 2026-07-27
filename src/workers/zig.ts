@@ -160,7 +160,11 @@ async function run(source: string) {
             const cwd = wasi.fds[3] as PreopenDirectory;
             const mainWasm = cwd.dir.contents.get("main.wasm") as File | undefined;
             if (mainWasm) {
-                postMessage({ compiled: mainWasm.data });
+                // Send the underlying ArrayBuffer (not the Uint8Array view):
+                // downstream transfers the wasm bytes via postMessage's
+                // transfer list, which only accepts transferable objects
+                // (ArrayBuffer), not typed-array views.
+                postMessage({ compiled: mainWasm.data.buffer });
                 // First cold compile (or grown cache) → async IDB write.
                 schedulePersistCache();
             } else {

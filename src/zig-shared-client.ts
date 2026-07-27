@@ -66,7 +66,7 @@ function attachLegacyAdapter(
             onMsg({
                 kind: "compiled",
                 requestId: pendingReqId.current ?? "",
-                wasm: d.compiled as ArrayBuffer,
+                wasm: d.compiled,
             });
             return;
         }
