@@ -397,6 +397,7 @@ function buildInTree(entry, { wasmOpt, dryRun, cacheRoot }) {
 
   if (dryRun) {
     console.log(`    zig sources → ${zigTree}`);
+    console.log(`    ZIG_LIB_DIR → ${join(zigTree, "lib")} (source tree's own lib)`);
     console.log(
       `    would run: ${zigBin} build -Dtarget=wasm32-wasi -Ddev=wasm -Dno-lib -Dversion-string=… --release=small`,
     );
@@ -408,6 +409,14 @@ function buildInTree(entry, { wasmOpt, dryRun, cacheRoot }) {
   const zigOutTree = join(zigTree, "zig-out");
   if (existsSync(zigOutTree)) rmSync(zigOutTree, { recursive: true, force: true });
 
+  // Force the host zig binary to use the source tree's own lib/, not its
+  // bundled one. hostZig is a rolling nightly whose bundled lib/ can lag the
+  // freshly cloned source tip (removed `x86_mingw`, non-optional
+  // `cTypeBitSize`, etc.), breaking the in-tree build at random. Using the
+  // same-commit lib makes source and std always in sync — this is exactly how
+  // upstream Zig CI keeps bootstrap consistent (ZIG_LIB_DIR in ci/*.sh).
+  const zigEnv = { ...process.env, ZIG_LIB_DIR: join(zigTree, "lib") };
+
   run(
     zigBin,
     [
@@ -418,7 +427,7 @@ function buildInTree(entry, { wasmOpt, dryRun, cacheRoot }) {
       `-Dversion-string=${versionString}`,
       "--release=small",
     ],
-    { cwd: zigTree },
+    { cwd: zigTree, env: zigEnv },
   );
 
   const zigWasm = join(zigOutTree, "bin", "zig.wasm");
@@ -472,7 +481,7 @@ pub fn build(b: *std.Build) void {
   let crtBuild = spawnSync(zigBin, ["build", "--release=small"], {
     cwd: crtDir,
     encoding: "utf8",
-    env: process.env,
+    env: zigEnv,
   });
   if (crtBuild.status !== 0 && /invalid fingerprint.*use this value: (0x[0-9a-fA-F]+)/.test(crtBuild.stderr || "")) {
     const fp = (crtBuild.stderr || "").match(/use this value: (0x[0-9a-fA-F]+)/)[1];
@@ -486,7 +495,7 @@ pub fn build(b: *std.Build) void {
 }
 `,
     );
-    run(zigBin, ["build", "--release=small"], { cwd: crtDir });
+    run(zigBin, ["build", "--release=small"], { cwd: crtDir, env: zigEnv });
   } else if (crtBuild.status !== 0) {
     console.error(crtBuild.stderr || crtBuild.stdout);
     throw new Error("compiler_rt build failed");
