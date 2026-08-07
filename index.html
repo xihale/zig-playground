@@ -9,10 +9,15 @@
     <script>
     (function () {
       try {
+        // Embed skips split restore: `#embed/…` (new) or `?embed` / `#embed=…` (legacy).
+        if (/^#embed(?:\/|=|&|$)/i.test(location.hash)) return;
         var p = new URLSearchParams(location.search);
         if (location.hash.length > 1) {
           var h = location.hash.charAt(0) === "#" ? location.hash.slice(1) : location.hash;
-          new URLSearchParams(h).forEach(function (v, k) { p.set(k, v); });
+          // Path-style `#z/…` is not key=value; only merge legacy hash params.
+          if (h.indexOf("=") !== -1 && !/^z\//i.test(h) && !/^embed\//i.test(h)) {
+            new URLSearchParams(h).forEach(function (v, k) { p.set(k, v); });
+          }
         }
         var emb = p.get("embed");
         if (p.has("embed") && (emb === null || emb === "" || emb === "1" || /^true|yes$/i.test(emb))) return;

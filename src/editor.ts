@@ -85,8 +85,8 @@ function isStructuralAutoRunTrigger(update: ViewUpdate): boolean {
   return hit;
 }
 
-// Embed mode: blog/doc iframes pass source via ?code= / ?b64= and hide chrome.
-const embedConfig = parseEmbedConfig();
+// Embed mode: source lives in the hash (`#embed/z/…` or legacy `?b64=`).
+const embedConfig = await parseEmbedConfig();
 if (embedConfig.embed) {
   document.body.classList.add("embed");
   document.documentElement.classList.add("embed");
@@ -1104,8 +1104,8 @@ shareDropdown.addEventListener("click", async (e) => {
   const kind = btn.dataset.share;
   const text =
     kind === "iframe"
-      ? buildIframeSnippet(source)
-      : buildShareUrl(source);
+      ? await buildIframeSnippet(source)
+      : await buildShareUrl(source);
   const ok = await copyText(text);
   setShareOpen(false);
   flashShareLabel(ok ? "Copied!" : "Failed");
