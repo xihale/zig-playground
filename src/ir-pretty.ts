@@ -36,25 +36,16 @@ export function prettyDecompile(raw: string): PrettyIrResult {
     };
   }
 
-  const printIds = new Set<number>();
-  const cleaned = user.map((f) => {
-    const r = renameStdCallsDecompile(demangleDecompileBlock(f.body));
-    for (const id of r.printIds) printIds.add(id);
-    return r.text;
-  });
+  const cleaned = user.map((f) =>
+    renameStdCallsDecompile(demangleDecompileBlock(f.body)),
+  );
 
-  const sortedPrints = [...printIds].sort((a, b) => a - b);
   const hidden = all.length - user.length;
   const header = [
-    `// main.zig  (${user.length} function${user.length === 1 ? "" : "s"} — helpers/methods included)`,
     hidden > 0
-      ? `// ${hidden.toLocaleString()} std/runtime function${hidden === 1 ? "" : "s"} hidden.`
+      ? `// ${hidden.toLocaleString()} std/runtime functions hidden.`
       : null,
-    `// Names: main_foo → foo; debug_print_anon_N → print_N (each N = one print(fmt, args) site; body omitted).`,
-    sortedPrints.length > 0
-      ? `// print sites referenced: ${sortedPrints.map((n) => `print_${n}`).join(", ")}`
-      : null,
-    `// Built with -OReleaseFast (no Debug overflow checks).`,
+    `// Built with -OReleaseFast`,
     ``,
   ]
     .filter((l) => l !== null)
@@ -80,24 +71,15 @@ export function prettyWat(raw: string): PrettyIrResult {
     return { text: raw, shown: 0, hidden: other, fullDump: true };
   }
 
-  const printIds = new Set<number>();
-  const cleaned = user.map((f) => {
-    const r = renameStdCallsWat(demangleWatBlock(f.body));
-    for (const id of r.printIds) printIds.add(id);
-    return r.text;
-  });
+  const cleaned = user.map((f) =>
+    renameStdCallsWat(demangleWatBlock(f.body)),
+  );
 
-  const sortedPrints = [...printIds].sort((a, b) => a - b);
   const header = [
-    `;; main.zig  (${user.length} function${user.length === 1 ? "" : "s"} — helpers/methods included)`,
     other > 0
-      ? `;; ${other.toLocaleString()} other function${other === 1 ? "" : "s"} omitted (std/runtime/imports).`
+      ? `;; ${other.toLocaleString()} std/runtime functions hidden.`
       : null,
-    `;; Names: $main.foo → $foo; $debug.print__anon_N → $print_N (unique fmt+args each; body omitted).`,
-    sortedPrints.length > 0
-      ? `;; print sites: ${sortedPrints.map((n) => `$print_${n}`).join(", ")}`
-      : null,
-    `;; Built with -OReleaseFast.`,
+    `;; Built with -OReleaseFast`,
     ``,
     `(module`,
   ]
@@ -158,22 +140,12 @@ function demangleDecompileBlock(block: string): string {
   return block.replace(/\bmain_([A-Za-z0-9_]+)\b/g, "$1");
 }
 
-/**
- * `debug_print_anon_1019` → `print_1019` (keep N — each is a distinct print site).
- * Other `*_anon_N` → `*_N`.
- */
-function renameStdCallsDecompile(block: string): {
-  text: string;
-  printIds: number[];
-} {
-  const printIds: number[] = [];
-  let text = block.replace(/\bdebug_print_anon_(\d+)\b/g, (_m, id: string) => {
-    printIds.push(Number(id));
-    return `print_${id}`;
-  });
+/** `debug_print_anon_N` → `print_N`; other `*_anon_N` → `*_N`. */
+function renameStdCallsDecompile(block: string): string {
+  let text = block.replace(/\bdebug_print_anon_(\d+)\b/g, "print_$1");
   // Underscores are word chars in JS \b — match the full mangled prefix.
   text = text.replace(/\b([A-Za-z_][A-Za-z0-9_]*)_anon_(\d+)\b/g, "$1_$2");
-  return { text, printIds };
+  return text;
 }
 
 type WatFunc = { name: string; body: string };
@@ -214,22 +186,12 @@ function demangleWatBlock(block: string): string {
   return block.replace(/\$main\.([A-Za-z0-9_.]+)/g, "$$$1");
 }
 
-/**
- * `$debug.print__anon_1019` → `$print_1019`.
- * Other `$foo.bar__anon_N` → `$foo.bar_N`.
- */
-function renameStdCallsWat(block: string): {
-  text: string;
-  printIds: number[];
-} {
-  const printIds: number[] = [];
-  let text = block.replace(/\$debug\.print__anon_(\d+)\b/g, (_m, id: string) => {
-    printIds.push(Number(id));
-    return `$print_${id}`;
-  });
+/** `$debug.print__anon_N` → `$print_N`; other `$…__anon_N` / `$…_anon_N` → `$…_N`. */
+function renameStdCallsWat(block: string): string {
+  let text = block.replace(/\$debug\.print__anon_(\d+)\b/g, "$$print_$1");
   text = text.replace(/\$([A-Za-z0-9_.]+)__anon_(\d+)\b/g, "$$$1_$2");
   text = text.replace(/\$([A-Za-z0-9_.]+)_anon_(\d+)\b/g, "$$$1_$2");
-  return { text, printIds };
+  return text;
 }
 
 function indentBlock(block: string, spaces: number): string {
