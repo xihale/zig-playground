@@ -133,6 +133,10 @@ async function run(source: string) {
             "libcompiler_rt.a",
             "-fno-compiler-rt", // manually linked because the self hosted webassembly backend cannot compile it by itself
             "-fno-entry", // prevent the native webassembly backend from adding a start function to the module
+            // ReleaseFast: Debug injects integer-overflow / stack checks that drown
+            // the decompile/WAT view. Fast also matches "read my logic" better than
+            // ReleaseSafe (which keeps safety panics). Runtime no longer traps on overflow.
+            "-OReleaseFast",
         ];
         const env: string[] = [];
         const fds = [

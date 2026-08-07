@@ -1,4 +1,4 @@
-import { EditorState } from "@codemirror/state";
+import { EditorState, type Extension } from "@codemirror/state";
 import {
   keymap,
   EditorView,
@@ -30,6 +30,8 @@ import {
 } from "@codemirror/autocomplete";
 import { forEachDiagnostic, lintKeymap, setDiagnosticsEffect } from "@codemirror/lint";
 import { zigLanguage } from "@ndim/codemirror-lang-zig";
+import { wast } from "@codemirror/lang-wast";
+import { cpp } from "@codemirror/lang-cpp";
 import { editorTheme, highlightStyle } from "./theme.ts";
 import { fullLineSelection } from "./full-line-selection.ts";
 import {
@@ -52,6 +54,8 @@ import {
 } from "./version.ts";
 import { ZigSharedClient } from "./zig-shared-client";
 import type { WorkerMsg } from "./shared-protocol";
+import { wasmToWat } from "./wasm-to-wat";
+import { wasmDecompile } from "./wasm-decompile";
 // @ts-ignore
 import RunnerWorker from './workers/runner.ts?worker';
 
@@ -390,11 +394,211 @@ exampleSelect.addEventListener("change", () => {
 
 const outputContainer = document.getElementById("output-container")!;
 const outputPad = document.getElementById("output-pad")!;
+const panelOutput = document.getElementById("panel-output")!;
+const panelWat = document.getElementById("panel-wat")!;
+const panelDecompile = document.getElementById("panel-decompile")!;
+const tabOutput = document.getElementById("tab-output")! as HTMLButtonElement;
+const tabWat = document.getElementById("tab-wat")! as HTMLButtonElement;
+const tabDecompile = document.getElementById("tab-decompile")! as HTMLButtonElement;
 const runStatus = document.getElementById("run-status")!;
 const statusText = document.getElementById("status-text")!;
 
 let compileBlock: HTMLElement | null = null;
 let runBlock: HTMLElement | null = null;
+
+/**
+ * IR tabs (Decompile / WAT). Shared wasm buffer; each view converts lazily
+ * when its tab is open so auto-run does not pay for wabt on every settle.
+ *
+ * Read-only CodeMirror reuses editorTheme + highlightStyle (st-* / zig-theme.css).
+ * WAT → @codemirror/lang-wast; decompile (C-like) → @codemirror/lang-cpp.
+ */
+type PreviewTab = "output" | "decompile" | "wat";
+const PREVIEW_TABS: PreviewTab[] = ["output", "decompile", "wat"];
+
+/** Lightweight read-only CM for IR dumps (no history/LSP/autocomplete). */
+function createIrEditor(parent: HTMLElement, language: Extension): EditorView {
+  return new EditorView({
+    parent,
+    state: EditorState.create({
+      doc: "",
+      extensions: [
+        EditorState.readOnly.of(true),
+        EditorView.editable.of(false),
+        lineNumbers(),
+        highlightSpecialChars(),
+        foldGutter({
+          markerDOM(open) {
+            const span = document.createElement("span");
+            span.className = open ? "cm-fold-open" : "cm-fold-closed";
+            span.textContent = open ? "⌄" : "›";
+            return span;
+          },
+        }),
+        drawSelection(),
+        fullLineSelection(),
+        EditorState.allowMultipleSelections.of(true),
+        syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+        bracketMatching(),
+        rectangularSelection(),
+        highlightSelectionMatches(),
+        keymap.of([...defaultKeymap, ...searchKeymap, ...foldKeymap]),
+        editorTheme,
+        language,
+        syntaxHighlighting(highlightStyle),
+      ],
+    }),
+  });
+}
+
+let irEpoch = 0;
+let lastWasmForIr: ArrayBuffer | null = null;
+let activePreviewTab: PreviewTab = "output";
+
+type IrView = {
+  view: EditorView;
+  readyEpoch: number;
+  converting: boolean;
+  emptyHint: string;
+  readyHint: string;
+  convertingLabel: string;
+  failLabel: string;
+  convert: (wasm: ArrayBuffer) => Promise<{ text: string }>;
+};
+
+const irViews: Record<"decompile" | "wat", IrView> = {
+  decompile: {
+    view: createIrEditor(document.getElementById("decompile-container")!, cpp()),
+    readyEpoch: -1,
+    converting: false,
+    emptyHint: "Run the program to see a C-like decompile of main.zig (your helpers included).",
+    readyHint: "Open this tab to decompile main.zig (helpers kept, std hidden, ReleaseFast).",
+    convertingLabel: "Decompiling main.zig…",
+    failLabel: "Decompile failed",
+    convert: (wasm) => wasmDecompile(wasm.slice(0)),
+  },
+  wat: {
+    view: createIrEditor(document.getElementById("wat-container")!, wast()),
+    readyEpoch: -1,
+    converting: false,
+    emptyHint: "Run the program to see WebAssembly text for main.zig (your helpers included).",
+    readyHint: "Open this tab to disassemble main.zig (helpers kept, std hidden, ReleaseFast).",
+    convertingLabel: "Converting main.zig to WAT…",
+    failLabel: "WAT conversion failed",
+    convert: (wasm) => wasmToWat(wasm),
+  },
+};
+
+function setIrDoc(
+  view: EditorView,
+  text: string,
+  kind: "ok" | "placeholder" | "error" = "ok",
+) {
+  view.dispatch({
+    changes: { from: 0, to: view.state.doc.length, insert: text },
+  });
+  view.dom.classList.toggle("ir-placeholder", kind === "placeholder");
+  view.dom.classList.toggle("ir-error", kind === "error");
+}
+
+function clearIrViews() {
+  irEpoch += 1;
+  lastWasmForIr = null;
+  for (const key of ["decompile", "wat"] as const) {
+    const v = irViews[key];
+    v.readyEpoch = -1;
+    v.converting = false;
+    setIrDoc(v.view, v.emptyHint, "placeholder");
+  }
+}
+
+function onCompiledWasm(wasmCopy: ArrayBuffer) {
+  irEpoch += 1;
+  lastWasmForIr = wasmCopy;
+  for (const key of ["decompile", "wat"] as const) {
+    const v = irViews[key];
+    v.readyEpoch = -1;
+    v.converting = false;
+  }
+  if (activePreviewTab === "decompile" || activePreviewTab === "wat") {
+    startIrConvert(activePreviewTab);
+  } else {
+    setIrDoc(irViews.decompile.view, irViews.decompile.readyHint, "placeholder");
+    setIrDoc(irViews.wat.view, irViews.wat.readyHint, "placeholder");
+  }
+}
+
+function startIrConvert(which: "decompile" | "wat") {
+  const ir = irViews[which];
+  const wasm = lastWasmForIr;
+  if (!wasm) {
+    setIrDoc(ir.view, ir.emptyHint, "placeholder");
+    return;
+  }
+  if (ir.readyEpoch === irEpoch || ir.converting) return;
+  const epoch = irEpoch;
+  ir.converting = true;
+  setIrDoc(ir.view, ir.convertingLabel, "placeholder");
+  void ir
+    .convert(wasm)
+    .then((result) => {
+      if (epoch !== irEpoch) return;
+      ir.converting = false;
+      ir.readyEpoch = epoch;
+      setIrDoc(ir.view, result.text, "ok");
+    })
+    .catch((err) => {
+      if (epoch !== irEpoch) return;
+      ir.converting = false;
+      setIrDoc(ir.view, `${ir.failLabel}:\n${err}`, "error");
+    });
+}
+
+function setPreviewTab(tab: PreviewTab) {
+  activePreviewTab = tab;
+  const tabBtns: Record<PreviewTab, HTMLButtonElement> = {
+    output: tabOutput,
+    decompile: tabDecompile,
+    wat: tabWat,
+  };
+  const panels: Record<PreviewTab, HTMLElement> = {
+    output: panelOutput,
+    decompile: panelDecompile,
+    wat: panelWat,
+  };
+  for (const t of PREVIEW_TABS) {
+    const on = t === tab;
+    tabBtns[t].setAttribute("aria-selected", on ? "true" : "false");
+    tabBtns[t].tabIndex = on ? 0 : -1;
+    panels[t].hidden = !on;
+  }
+  if (tab === "decompile" || tab === "wat") {
+    startIrConvert(tab);
+    // Panel was display:none — CM needs a measure pass for correct layout.
+    irViews[tab].view.requestMeasure();
+  }
+}
+
+tabOutput.addEventListener("click", () => setPreviewTab("output"));
+tabDecompile.addEventListener("click", () => setPreviewTab("decompile"));
+tabWat.addEventListener("click", () => setPreviewTab("wat"));
+// Arrow keys between tabs (basic ARIA tablist).
+document.querySelector(".output-tabs")?.addEventListener("keydown", (ev) => {
+  const e = ev as KeyboardEvent;
+  if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+  e.preventDefault();
+  const i = PREVIEW_TABS.indexOf(activePreviewTab);
+  const next =
+    PREVIEW_TABS[
+      e.key === "ArrowRight"
+        ? (i + 1) % PREVIEW_TABS.length
+        : (i - 1 + PREVIEW_TABS.length) % PREVIEW_TABS.length
+    ]!;
+  setPreviewTab(next);
+  ({ output: tabOutput, decompile: tabDecompile, wat: tabWat })[next].focus();
+});
+setIrDoc(irViews.decompile.view, irViews.decompile.emptyHint, "placeholder");
+setIrDoc(irViews.wat.view, irViews.wat.emptyHint, "placeholder");
 
 type Status =
   | { kind: "idle" }
@@ -426,6 +630,7 @@ function clearOutput() {
   compileBlock = null;
   runBlock = null;
   outputContainer.scrollLeft = 0;
+  clearIrViews();
 }
 
 function scrollOutput() {
@@ -774,6 +979,10 @@ const onZigWorkerMessage = (msg: WorkerMsg) => {
     }
 
     clearCompile();
+    // Copy before transfer — postMessage with transfer list detaches the buffer.
+    // WAT tab holds the copy; the original goes to the runner.
+    onCompiledWasm(msg.wasm.slice(0));
+
     // Only show "running" if still in flight after 350ms — fast programs
     // go straight to exit code with no intermediate flicker.
     clearRunningStatusTimer();

@@ -34,14 +34,33 @@
 
             <section id="preview-pane">
                 <div class="pane-toolbar">
-                    <div class="pane-toolbar-left">Output</div>
+                    <div class="pane-toolbar-left">
+                        <div class="output-tabs" role="tablist" aria-label="Preview">
+                            <button type="button" class="output-tab" role="tab" id="tab-output"
+                                aria-selected="true" aria-controls="panel-output" tabindex="0">Output</button>
+                            <button type="button" class="output-tab" role="tab" id="tab-decompile"
+                                aria-selected="false" aria-controls="panel-decompile" tabindex="-1"
+                                title="C-like decompile of main.zig: your functions kept, std hidden (ReleaseFast)">Decompile</button>
+                            <button type="button" class="output-tab" role="tab" id="tab-wat"
+                                aria-selected="false" aria-controls="panel-wat" tabindex="-1"
+                                title="WebAssembly text for main.zig: your functions kept, std hidden (ReleaseFast)">WAT</button>
+                        </div>
+                    </div>
                     <div id="run-status" class="busy" title="status">
                         <span class="status-spinner" aria-hidden="true"></span>
                         <span id="status-text">loading</span>
                     </div>
                 </div>
-                <div id="output-container">
-                    <div id="output-pad"></div>
+                <div id="panel-output" class="preview-panel" role="tabpanel" aria-labelledby="tab-output">
+                    <div id="output-container">
+                        <div id="output-pad"></div>
+                    </div>
+                </div>
+                <div id="panel-decompile" class="preview-panel" role="tabpanel" aria-labelledby="tab-decompile" hidden>
+                    <div id="decompile-container" class="ir-editor-host"></div>
+                </div>
+                <div id="panel-wat" class="preview-panel" role="tabpanel" aria-labelledby="tab-wat" hidden>
+                    <div id="wat-container" class="ir-editor-host"></div>
                 </div>
             </section>
         </div>

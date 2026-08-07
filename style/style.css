@@ -204,6 +204,50 @@ main {
     letter-spacing: 0.02em;
 }
 
+/* Output | WAT tabs — bare text, same language as toolbar selects. */
+.output-tabs {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.85rem;
+}
+
+.output-tab {
+    border: none;
+    border-radius: 0;
+    padding: 0.2rem 0;
+    margin: 0;
+    height: auto;
+    font-size: 0.85rem;
+    font-weight: 400;
+    font-family: var(--editor-font-mono);
+    line-height: 1.4;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+    background: transparent;
+    color: var(--body-mid);
+}
+.output-tab:hover,
+.output-tab:focus-visible {
+    color: var(--ink);
+    outline: none;
+}
+.output-tab[aria-selected="true"] {
+    color: var(--ink);
+}
+
+/* Tab panels fill remaining height under the preview toolbar. */
+.preview-panel {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+.preview-panel[hidden] {
+    display: none;
+}
+
 /* Example select + toolbar actions: bare text controls (no outlined boxes). */
 
 .pane-toolbar-actions {
@@ -388,6 +432,18 @@ main {
     color: var(--output-text);
 }
 
+/* IR tabs host read-only CodeMirror (same height/scroll model as #editor). */
+#wat-container,
+#decompile-container,
+.ir-editor-host {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    background-color: var(--code-background-color);
+    color: var(--code-text-color);
+}
+
 /* Single pad box: shrink-wraps long pre lines, still fills the pane when
    short. Padding is on this box so left/right inset scrolls with content. */
 #output-pad {
@@ -410,6 +466,18 @@ main {
 
 #output-pad > .zig-output {
     color: var(--status-err);
+}
+
+/* Placeholder / error: mute or error-tint the whole IR doc (incl. token spans). */
+.cm-editor.ir-placeholder .cm-line,
+.cm-editor.ir-placeholder .cm-line span {
+    color: var(--body-mid) !important;
+    font-style: normal;
+}
+.cm-editor.ir-error .cm-line,
+.cm-editor.ir-error .cm-line span {
+    color: var(--status-err) !important;
+    font-style: normal;
 }
 
 /* ─── Resize bar: 1px hairline, wide hit target ────────────────── */

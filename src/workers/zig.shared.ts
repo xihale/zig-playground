@@ -260,6 +260,8 @@ async function doOneCompile(
             "libcompiler_rt.a",
             "-fno-compiler-rt",
             "-fno-entry",
+            // See zig.ts — ReleaseFast keeps Decompile/WAT readable (no Debug safety noise).
+            "-OReleaseFast",
         ];
         const env: string[] = [];
         const fds = [
