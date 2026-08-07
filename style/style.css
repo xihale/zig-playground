@@ -60,6 +60,10 @@
     --editor-text-tertiary: var(--body-mid);
     --editor-surface: rgba(255, 255, 255, 0.035);
     --editor-focus-ring: rgba(255, 255, 255, 0.14);
+
+    /* e:1 editor:preview (e/(e+1) ≈ 73.108%). Early head script + resize
+       logic overwrite on documentElement before/after first paint. */
+    --editor-size-percent: 73.108%;
 }
 
 body, button, select {
@@ -151,8 +155,6 @@ main {
     flex-direction: row;
     height: 100%;
     overflow: hidden;
-    /* e:1 editor:preview (e/(e+1) ≈ 73.108%). Resize logic overwrites. */
-    --editor-size-percent: 73.108%;
 }
 
 #editor-pane {

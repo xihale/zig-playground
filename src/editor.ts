@@ -471,9 +471,9 @@ const irViews: Record<"decompile" | "wat", IrView> = {
     view: createIrEditor(document.getElementById("decompile-container")!, cpp()),
     readyEpoch: -1,
     converting: false,
-    emptyHint: "Run the program to see a C-like decompile of main.zig (your helpers included).",
-    readyHint: "Open this tab to decompile main.zig (helpers kept, std hidden, ReleaseFast).",
-    convertingLabel: "Decompiling main.zig…",
+    emptyHint: "Run the program to see a C-like decompile (ReleaseFast).",
+    readyHint: "Open this tab for C-like decompile (ReleaseFast).",
+    convertingLabel: "Decompiling…",
     failLabel: "Decompile failed",
     convert: (wasm) => wasmDecompile(wasm.slice(0)),
   },
@@ -481,9 +481,9 @@ const irViews: Record<"decompile" | "wat", IrView> = {
     view: createIrEditor(document.getElementById("wat-container")!, wast()),
     readyEpoch: -1,
     converting: false,
-    emptyHint: "Run the program to see WebAssembly text for main.zig (your helpers included).",
-    readyHint: "Open this tab to disassemble main.zig (helpers kept, std hidden, ReleaseFast).",
-    convertingLabel: "Converting main.zig to WAT…",
+    emptyHint: "Run the program to see WAT (ReleaseFast).",
+    readyHint: "Open this tab for WAT (ReleaseFast).",
+    convertingLabel: "Converting to WAT…",
     failLabel: "WAT conversion failed",
     convert: (wasm) => wasmToWat(wasm),
   },
@@ -1163,13 +1163,60 @@ if (embedConfig.autorun) {
 // Side-by-side on wide playgrounds (drag X); stacked on narrow ones
 // (drag Y, output below). Orientation comes from the live computed
 // flex-direction so the same logic follows the container query.
+// Ratios are axis-specific and remembered across reloads (full app only).
 
 const splitPane = document.getElementById("split-pane")!;
 const resizeBar = document.getElementById("resize-bar")!;
+const SPLIT_H_KEY = "zig-playground-split-h";
+const SPLIT_V_KEY = "zig-playground-split-v";
+const persistSplit = !embedConfig.embed;
 
 function isVerticalSplit() {
   return getComputedStyle(splitPane).flexDirection === "column";
 }
+
+function splitStorageKey(vertical: boolean) {
+  return vertical ? SPLIT_V_KEY : SPLIT_H_KEY;
+}
+
+function loadSplitPercent(vertical: boolean): number | null {
+  if (!persistSplit) return null;
+  try {
+    const raw = localStorage.getItem(splitStorageKey(vertical));
+    if (raw === null) return null;
+    const n = parseFloat(raw);
+    if (!Number.isFinite(n) || n < 10 || n > 90) return null;
+    return n;
+  } catch {
+    return null;
+  }
+}
+
+function saveSplitPercent(vertical: boolean, percent: number) {
+  if (!persistSplit) return;
+  try {
+    localStorage.setItem(splitStorageKey(vertical), String(percent));
+  } catch {
+    // Private mode / quota — ignore.
+  }
+}
+
+// Apply on <html> so it matches the early head restore and inherits into
+// the split pane. removeProperty falls back to :root CSS default.
+function applySplitPercent(percent: number | null) {
+  const root = document.documentElement;
+  if (percent === null) {
+    root.style.removeProperty("--editor-size-percent");
+  } else {
+    root.style.setProperty("--editor-size-percent", `${percent}%`);
+  }
+}
+
+// Head used viewport width as a stand-in for the container query; re-sync
+// against the live flex-direction. Same value → no paint jump.
+applySplitPercent(loadSplitPercent(isVerticalSplit()));
+
+let dragPercent: number | null = null;
 
 function onResizeBarMove(event: MouseEvent) {
   const rect = splitPane.getBoundingClientRect();
@@ -1180,7 +1227,8 @@ function onResizeBarMove(event: MouseEvent) {
     percent = (event.clientX - rect.left) / rect.width * 100;
   }
   percent = Math.min(Math.max(10, percent), 90);
-  splitPane.style.setProperty("--editor-size-percent", `${percent}%`);
+  dragPercent = percent;
+  applySplitPercent(percent);
 }
 
 function onResizeBarMouseUp() {
@@ -1189,10 +1237,15 @@ function onResizeBarMouseUp() {
   document.body.style.removeProperty("user-select");
   document.body.style.removeProperty("cursor");
   resizeBar.classList.remove("dragging");
+  if (dragPercent !== null) {
+    saveSplitPercent(isVerticalSplit(), dragPercent);
+    dragPercent = null;
+  }
 }
 
 resizeBar.addEventListener("mousedown", event => {
   if (event.buttons & 1) {
+    dragPercent = null;
     window.addEventListener("mousemove", onResizeBarMove);
     window.addEventListener("mouseup", onResizeBarMouseUp);
     document.body.style.userSelect = "none";
@@ -1201,13 +1254,13 @@ resizeBar.addEventListener("mousedown", event => {
   }
 });
 
-// Dragged split ratios are axis-specific. When the container flips
-// between row and column, drop the inline percent so CSS defaults apply.
+// Axis-specific ratios: when the container flips between row and column,
+// re-apply the saved percent for the new axis (or CSS default if none).
 let lastVerticalSplit = isVerticalSplit();
 new ResizeObserver(() => {
   const vertical = isVerticalSplit();
   if (vertical !== lastVerticalSplit) {
     lastVerticalSplit = vertical;
-    splitPane.style.removeProperty("--editor-size-percent");
+    applySplitPercent(loadSplitPercent(vertical));
   }
 }).observe(splitPane);

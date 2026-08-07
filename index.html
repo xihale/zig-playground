@@ -5,6 +5,26 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Zig Playground</title>
     <link rel="stylesheet" href="style/style.css">
+    <!-- Restore split ratio before first paint (avoids jump after module load). -->
+    <script>
+    (function () {
+      try {
+        var p = new URLSearchParams(location.search);
+        if (location.hash.length > 1) {
+          var h = location.hash.charAt(0) === "#" ? location.hash.slice(1) : location.hash;
+          new URLSearchParams(h).forEach(function (v, k) { p.set(k, v); });
+        }
+        var emb = p.get("embed");
+        if (p.has("embed") && (emb === null || emb === "" || emb === "1" || /^true|yes$/i.test(emb))) return;
+        var vertical = window.matchMedia("(max-width: 960px)").matches;
+        var raw = localStorage.getItem(vertical ? "zig-playground-split-v" : "zig-playground-split-h");
+        if (raw == null) return;
+        var n = parseFloat(raw);
+        if (!isFinite(n) || n < 10 || n > 90) return;
+        document.documentElement.style.setProperty("--editor-size-percent", n + "%");
+      } catch (e) {}
+    })();
+    </script>
 </head>
 <body>
     <main>
@@ -40,10 +60,10 @@
                                 aria-selected="true" aria-controls="panel-output" tabindex="0">Output</button>
                             <button type="button" class="output-tab" role="tab" id="tab-decompile"
                                 aria-selected="false" aria-controls="panel-decompile" tabindex="-1"
-                                title="C-like decompile of main.zig: your functions kept, std hidden (ReleaseFast)">Decompile</button>
+                                title="C-like decompile (ReleaseFast)">Decompile</button>
                             <button type="button" class="output-tab" role="tab" id="tab-wat"
                                 aria-selected="false" aria-controls="panel-wat" tabindex="-1"
-                                title="WebAssembly text for main.zig: your functions kept, std hidden (ReleaseFast)">WAT</button>
+                                title="WAT (ReleaseFast)">WAT</button>
                         </div>
                     </div>
                     <div id="run-status" class="busy" title="status">
