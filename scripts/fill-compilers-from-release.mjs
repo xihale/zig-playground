@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 /**
- * Download compilers.tar.gz from a GitHub Release and fill any missing
+ * Download all <id>.tar.gz from a GitHub Release and fill any missing
  * public/compilers/<id>/ trees listed in versions.json.
  *
- * Does not overwrite existing zig.wasm for an id (keeps freshly built trees).
+ * Does not overwrite existing meta.json for an id (keeps freshly built trees).
  *
  *   node scripts/fill-compilers-from-release.mjs
- *   node scripts/fill-compilers-from-release.mjs --tag compilers-latest
+ *   node scripts/fill-compilers-from-release.mjs --tag compilers
  *   node scripts/fill-compilers-from-release.mjs --require-all
  */
 
@@ -27,13 +27,13 @@ function arg(name, fallback) {
   return process.argv[i + 1];
 }
 
-const tag = arg("--tag", process.env.COMPILERS_RELEASE || "compilers-latest");
+const tag = arg("--tag", process.env.COMPILERS_RELEASE || "compilers");
 const requireAll = process.argv.includes("--require-all");
 const requireStable = process.argv.includes("--require-stable");
 
 const manifest = loadVersionsManifest();
 const missing = manifest.versions.filter(
-  (v) => !existsSync(join(root, "public", "compilers", v.id, "zig.wasm")),
+  (v) => !existsSync(join(root, "public", "compilers", v.id, "meta.json")),
 );
 
 if (missing.length === 0) {
@@ -66,7 +66,7 @@ for (const name of readdirSync(tmp)) {
 
 const dl = spawnSync(
   "gh",
-  ["release", "download", tag, "--repo", repo, "--dir", tmp, "--clobber"],
+  ["release", "download", tag, "--repo", repo, "--dir", tmp, "--clobber", "--pattern", "*.tar.gz"],
   { stdio: "inherit", env: process.env },
 );
 if (dl.status !== 0) {
@@ -75,28 +75,20 @@ if (dl.status !== 0) {
   process.exit(requireAll || requireStable ? 1 : 0);
 }
 
-const tar = join(tmp, "compilers.tar.gz");
+// Extract each <id>.tar.gz into stage/compilers/<id>/ (flat — files at archive root).
 const stage = join(tmp, "stage");
-mkdirSync(stage, { recursive: true });
-
-if (existsSync(tar)) {
-  const x = spawnSync("tar", ["-xzf", tar, "-C", stage], { stdio: "inherit" });
-  if (x.status !== 0) process.exit(1);
-} else if (existsSync(join(tmp, "compilers"))) {
-  cpSync(join(tmp, "compilers"), join(stage, "compilers"), { recursive: true });
-} else {
-  // flat per-id dirs in release root
-  mkdirSync(join(stage, "compilers"), { recursive: true });
-  for (const name of readdirSync(tmp)) {
-    const p = join(tmp, name);
-    if (name.endsWith(".tar.gz") && name !== "compilers.tar.gz") {
-      const id = name.replace(/\.tar\.gz$/, "");
-      mkdirSync(join(stage, "compilers", id), { recursive: true });
-      spawnSync("tar", ["-xzf", p, "-C", join(stage, "compilers", id), "--strip-components=1"], {
-        stdio: "inherit",
-      });
-    }
+mkdirSync(join(stage, "compilers"), { recursive: true });
+for (const name of readdirSync(tmp)) {
+  if (!name.endsWith(".tar.gz") || name === "compilers.tar.gz") continue;
+  const id = name.replace(/\.tar\.gz$/, "");
+  const dest = join(stage, "compilers", id);
+  mkdirSync(dest, { recursive: true });
+  const x = spawnSync("tar", ["-xzf", join(tmp, name), "-C", dest], { stdio: "inherit" });
+  if (x.status !== 0) {
+    console.error(`fill: failed to extract ${name}`);
+    process.exit(1);
   }
+  console.log(`  extracted ${name} → ${id}`);
 }
 
 const publicCompilers = join(root, "public", "compilers");
@@ -105,7 +97,7 @@ mkdirSync(publicCompilers, { recursive: true });
 for (const v of missing) {
   const src = join(stage, "compilers", v.id);
   const dest = join(publicCompilers, v.id);
-  if (existsSync(join(src, "zig.wasm"))) {
+  if (existsSync(join(src, "meta.json"))) {
     mkdirSync(dest, { recursive: true });
     cpSync(src, dest, { recursive: true });
     console.log(`  ${v.id}: filled from release`);
@@ -115,10 +107,10 @@ for (const v of missing) {
 }
 
 const still = manifest.versions.filter(
-  (v) => !existsSync(join(publicCompilers, v.id, "zig.wasm")),
+  (v) => !existsSync(join(publicCompilers, v.id, "meta.json")),
 );
 for (const v of manifest.versions) {
-  const ok = existsSync(join(publicCompilers, v.id, "zig.wasm"));
+  const ok = existsSync(join(publicCompilers, v.id, "meta.json"));
   console.log(`  matrix ${v.id}: ${ok ? "ok" : "MISSING"}`);
 }
 
