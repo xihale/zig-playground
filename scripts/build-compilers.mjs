@@ -45,7 +45,7 @@ function parseArgs(argv) {
   let select = "all";
   let wasmOpt = true;
   let dryRun = false;
-  let releaseTag = process.env.COMPILERS_RELEASE || "compilers-latest";
+  let releaseTag = process.env.COMPILERS_RELEASE || "compilers";
   let fillMissing = false;
   let skipExisting = false;
 
@@ -80,7 +80,7 @@ Options:
   --skip-existing                 Skip ids that already have public/compilers/<id>/zig.wasm
   --no-wasm-opt                   Skip wasm-opt post-process
   --fill-missing                  After build, fetch missing ids from GitHub release
-  --release-tag <tag>             Release tag for --fill-missing (default: compilers-latest)
+  --release-tag <tag>             Release tag for --fill-missing (default: compilers)
   --dry-run                       Print plan only
 `);
 }
