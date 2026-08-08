@@ -30,6 +30,13 @@ if (!existsSync(join(dist, "index.html"))) {
   process.exit(1);
 }
 
+// The served compiler SDK (lib build) must be present before assemble —
+// consumers import it from https://zp.xihale.top/zp-loader.js.
+if (!existsSync(join(dist, "zp-loader.js"))) {
+  console.error("dist/zp-loader.js missing — run `npm run build:loader` (or full `npm run build`)");
+  process.exit(1);
+}
+
 const versions = JSON.parse(readFileSync(join(root, "versions.json"), "utf8"));
 writeFileSync(join(dist, "versions.json"), JSON.stringify(versions, null, 2) + "\n");
 

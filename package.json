@@ -3,7 +3,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build && node scripts/assemble-dist.mjs",
+    "build": "vite build && vite build --config vite.loader.config.js && node scripts/assemble-dist.mjs",
+    "build:loader": "vite build --config vite.loader.config.js",
     "compilers": "node scripts/build-compilers.mjs",
     "compilers:stable": "node scripts/build-compilers.mjs --select stable",
     "compilers:scheduled": "node scripts/build-compilers.mjs --select scheduled",

@@ -6,6 +6,7 @@ repos
 zig-pkg
 zig-out
 .zig-version-cache
+.zcode/
 
 # Compiler binaries — package via scripts/build-compilers.mjs (CI/local only)
 public/compilers/**

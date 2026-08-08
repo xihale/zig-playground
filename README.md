@@ -29,6 +29,57 @@ fixed-name file). **Large binaries are never committed.**
 
 Design: [`docs/superpowers/specs/2026-07-26-multi-version-compilers-design.md`](docs/superpowers/specs/2026-07-26-multi-version-compilers-design.md)
 
+## Consume the compilers from another site
+
+This site also ships a small ESM **loader** — `https://zp.xihale.top/zp-loader.js` —
+so other projects can fetch these compilers without re-implementing the
+hash-filename / `meta.json` / Cache-Storage logic. Import it directly (works in
+Web Workers):
+
+```js
+import {
+  fetchCompilerFile,
+  compileCompilerWasm,
+  getZigLibDir,
+  listVersions,
+} from "https://zp.xihale.top/zp-loader.js";
+```
+
+Always pass **logical** names — the loader resolves the content-hash filename
+from each version's `meta.json`:
+
+| Logical name | What |
+|--------------|------|
+| `zig.wasm` | the compiler |
+| `zls.wasm` | the language server |
+| `libcompiler_rt.a` | compiler-rt archive |
+| `zig.tar.gz` | the standard-library tree |
+
+### Examples
+
+```js
+// 1) List the published versions (cache: no-store).
+const { default: def, versions } = await listVersions();
+// → { default: "0.16.0", versions: [{id:"0.16.0",label:"0.16.0"}, …] }
+
+// 2) Compile zig.wasm + load the std-lib tree for a version.
+const zigModule = await compileCompilerWasm("0.16.0", "zig.wasm");
+const stdLibDir = await getZigLibDir("0.16.0"); // WASI Directory from zig.tar.gz
+
+// 3) Fetch any logical file as bytes (e.g. compiler-rt).
+const crt = await fetchCompilerFile("0.16.0", "libcompiler_rt.a");
+```
+
+**Notes:**
+- Cross-origin fetch is permitted (the host serves permissive CORS). Large assets
+  are cached by the loader via Cache Storage keyed by the hashed URL, so a hit is
+  always the right bytes — offline-friendly after first load.
+- `meta.json` is always revalidated (`cache: "no-store"`), so new builds are
+  visible without a cache-bust.
+- **Self-hosting:** call `configure({ origin: "https://your.host" })` once before
+  any other call to point at your own `/compilers/<id>/…` tree. The default
+  origin is the loader's own host (`zp.xihale.top`).
+
 ### How builds are chosen
 
 [`versions.json`](versions.json) is the **build orchestrator**, not only the UI list:

@@ -11,6 +11,15 @@
  */
 
 import manifestJson from "../versions.json";
+import {
+  compilerAssetBase as coreAssetBase,
+  compilerAssetUrl as coreAssetUrl,
+  compilerAssetUrlHashed as coreAssetUrlHashed,
+  compilerIdFromAssetUrl as coreIdFromAssetUrl,
+  compilerMeta as coreMeta,
+  type CompilerMeta,
+  type CompilerMetaFile,
+} from "./compiler-core";
 
 export type VersionEntry = {
   id: string;
@@ -23,12 +32,7 @@ export type VersionsManifest = {
   versions: VersionEntry[];
 };
 
-export type CompilerMetaFile = { size: number; sha256: string; name: string };
-export type CompilerMeta = {
-  id: string;
-  builtAt: string;
-  files: Record<string, CompilerMetaFile>;
-};
+export type { CompilerMeta, CompilerMetaFile };
 
 export type ResolvedVersion = {
   id: string;
@@ -98,39 +102,27 @@ export function pathForVersion(id: string, manifest: VersionsManifest): string {
   return `${root}${id}/`;
 }
 
+/**
+ * The app serves compiler assets from its own deploy base (Vite `BASE_URL`,
+ * usually `/`). The loader (`src/loader.ts`) passes its own origin instead.
+ * This indirection is the only thing keeping `compiler-core.ts` reusable.
+ */
+function appOrigin(): string {
+  return import.meta.env.BASE_URL || "/";
+}
+
 /** Absolute URL prefix for compiler assets of a version. */
 export function compilerAssetBase(versionId: string): string {
-  const base = import.meta.env.BASE_URL || "/";
-  const root = base.endsWith("/") ? base : `${base}/`;
-  return `${root}compilers/${versionId}/`;
+  return coreAssetBase(appOrigin(), versionId);
 }
 
 export function compilerAssetUrl(versionId: string, file: string): string {
-  return `${compilerAssetBase(versionId)}${file}`;
+  return coreAssetUrl(appOrigin(), versionId, file);
 }
-
-const metaMemo = new Map<string, Promise<CompilerMeta | null>>();
 
 /** Fetch (once per id per session) and return the logical→physical file map. */
 export async function compilerMeta(versionId: string): Promise<CompilerMeta | null> {
-  let p = metaMemo.get(versionId);
-  if (!p) {
-    p = (async () => {
-      try {
-        const res = await fetch(compilerAssetUrl(versionId, "meta.json"), {
-          cache: "no-store",
-        });
-        if (!res.ok) return null;
-        const data = (await res.json()) as Partial<CompilerMeta>;
-        if (!data?.files || typeof data.files !== "object") return null;
-        return data as CompilerMeta;
-      } catch {
-        return null;
-      }
-    })();
-    metaMemo.set(versionId, p);
-  }
-  return p;
+  return coreMeta(appOrigin(), versionId);
 }
 
 /**
@@ -141,21 +133,10 @@ export async function compilerAssetUrlHashed(
   versionId: string,
   logicalName: string,
 ): Promise<string> {
-  const meta = await compilerMeta(versionId);
-  const entry = meta?.files?.[logicalName];
-  if (!entry?.name) return compilerAssetUrl(versionId, logicalName);
-  return compilerAssetUrl(versionId, entry.name);
+  return coreAssetUrlHashed(appOrigin(), versionId, logicalName);
 }
 
 /** Extract version id from `/compilers/<id>/…` (absolute or site-relative). */
 export function compilerIdFromAssetUrl(href: string): string | null {
-  try {
-    const path = href.includes("://")
-      ? new URL(href).pathname
-      : href.split("?")[0] ?? href;
-    const m = path.match(/\/compilers\/([^/]+)\//);
-    return m?.[1] ?? null;
-  } catch {
-    return null;
-  }
+  return coreIdFromAssetUrl(href);
 }

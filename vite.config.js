@@ -15,6 +15,7 @@ const IMMUTABLE_MAX_AGE = 365 * 24 * 60 * 60; // 1y — content-addressed files 
 function cacheControlForPath(path) {
   if (
     path === "/" ||
+    path === "/zp-loader.js" ||
     path.endsWith(".html") ||
     path.endsWith("versions.json") ||
     path.endsWith("/meta.json")

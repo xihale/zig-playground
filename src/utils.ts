@@ -2,6 +2,7 @@ import { untar } from "@andrewbranch/untar.js";
 import { Directory, File, ConsoleStdout, wasi as wasi_defs } from "@bjorn3/browser_wasi_shim";
 import { fetchCompilerResponse } from "./compiler-cache";
 import { compilerAssetUrlHashed } from "./version";
+import { compilerAssetUrlHashed as coreAssetUrlHashed, type CompilerOrigin } from "./compiler-core";
 
 export async function fetchAssetBuffer(url: URL | string): Promise<ArrayBuffer> {
     const href = typeof url === "string" ? url : url.href;
@@ -24,9 +25,38 @@ export async function compileWasmAsset(url: URL | string): Promise<WebAssembly.M
     return WebAssembly.compileStreaming(response);
 }
 
-/** Load std lib tarball for a specific compiler version id. */
+/** Fetch a logical compiler file under `origin` as bytes (hash resolved from meta). */
+export async function fetchCompilerFile(
+    origin: CompilerOrigin,
+    versionId: string,
+    logicalName: string,
+): Promise<ArrayBuffer> {
+    const url = await coreAssetUrlHashed(origin, versionId, logicalName);
+    return fetchAssetBuffer(url);
+}
+
+/** Compile a logical `.wasm` compiler asset under `origin` (hash resolved from meta). */
+export async function compileCompilerWasm(
+    origin: CompilerOrigin,
+    versionId: string,
+    logicalName: string,
+): Promise<WebAssembly.Module> {
+    const url = await coreAssetUrlHashed(origin, versionId, logicalName);
+    return compileWasmAsset(url);
+}
+
+/** Load std lib tarball for a specific compiler version id (app origin). */
 export async function getZigArchive(versionId: string): Promise<Directory> {
     const url = await compilerAssetUrlHashed(versionId, "zig.tar.gz");
+    return loadZigArchive(url);
+}
+
+/** Load std lib tarball under an explicit origin (used by the served loader). */
+export async function getZigArchiveFor(
+    origin: CompilerOrigin,
+    versionId: string,
+): Promise<Directory> {
+    const url = await coreAssetUrlHashed(origin, versionId, "zig.tar.gz");
     return loadZigArchive(url);
 }
 
