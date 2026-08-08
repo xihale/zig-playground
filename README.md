@@ -16,13 +16,16 @@ Run and explore Zig in your browser, with compiler and LSP support built in.
 Shared UI under `/assets/`. Per-version compilers:
 
 ```
-/compilers/<id>/zig.wasm
-/compilers/<id>/zls.wasm
-/compilers/<id>/libcompiler_rt.a
-/compilers/<id>/zig.tar.gz
+/compilers/<id>/zig.<hash>.wasm
+/compilers/<id>/zls.<hash>.wasm
+/compilers/<id>/libcompiler_rt.<hash>.a
+/compilers/<id>/zig.<hash>.tar.gz
+/compilers/<id>/meta.json
 ```
 
-**Large binaries are never committed.** Browser ZIR cache is keyed per version id.
+Compiler asset filenames carry a content hash so the CDN (Cloudflare) can cache
+them immutably; `meta.json` maps logical names → hashed filenames (the one
+fixed-name file). **Large binaries are never committed.**
 
 Design: [`docs/superpowers/specs/2026-07-26-multi-version-compilers-design.md`](docs/superpowers/specs/2026-07-26-multi-version-compilers-design.md)
 
@@ -87,16 +90,20 @@ npm run preview
 
 | Workflow | When compilers are built |
 |----------|---------------------------|
-| **Deploy** (every push) | **Reuses Release.** Downloads `compilers-latest` → only builds frontend. Source rebuild only if packages missing after download, or **Run workflow → rebuild_compilers**. |
-| **Master compiler** | Builds `schedule` ids with **hostZig=master** from Codeberg (~every 3 days + **manual**). On success, refreshes `compilers-latest` Release. Other ids filled from previous Release. |
+| **Deploy** (every push) | **Reuses Release.** Downloads per-version `<id>.tar.gz` from `compilers` → only builds frontend. Source rebuild only if an id is missing after download, or **Run workflow → rebuild_compilers**. |
+| **Master compiler** | Builds `schedule` ids with **hostZig=master** from Codeberg (~every 3 days + **manual**). On success, uploads only `master.tar.gz` to the `compilers` Release — stable pins stay untouched. |
 
 So: **compile once, upload Release, reuse forever** until you force rebuild or the release is incomplete.
 
 ```bash
-# One-time (or when upgrading a pin): produce + publish binaries
+# One-time (or when upgrading a pin): produce + publish binaries.
+# Each version id becomes its own <id>.tar.gz on the `compilers` release
+# (archives are flat — files at the root, no top-level dir).
 npm run compilers -- --select all
-tar -C public -czf compilers.tar.gz compilers
-gh release upload compilers-latest compilers.tar.gz --clobber
+for id in $(node -e 'console.log(require("./versions.json").versions.map(v=>v.id).join(" "))'); do
+  tar -C "public/compilers/$id" -czf "$id.tar.gz" .
+  gh release upload compilers "$id.tar.gz" --clobber
+done
 # after that, normal commits only redeploy the UI
 ```
 
