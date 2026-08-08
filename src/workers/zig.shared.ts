@@ -20,7 +20,7 @@ import {
     loadZirCacheEntries,
     saveZirCacheEntries,
 } from "../zir-cache";
-import { compilerAssetUrl } from "../version";
+import { compilerAssetUrlHashed } from "../version";
 import type { ClientMsg, WorkerMsg, ZirCacheInfo } from "../shared-protocol";
 
 /**
@@ -152,8 +152,8 @@ function ensureCompiler(versionId: string): Promise<Ready> {
             const [zirHit, libDirectory, compilerRt, zigModule] = await Promise.all([
                 loadZirCacheEntries(versionId),
                 getZigArchive(versionId),
-                fetchAssetBuffer(compilerAssetUrl(versionId, "libcompiler_rt.a")),
-                compileWasmAsset(compilerAssetUrl(versionId, "zig.wasm")),
+                (async () => fetchAssetBuffer(await compilerAssetUrlHashed(versionId, "libcompiler_rt.a")))(),
+                (async () => compileWasmAsset(await compilerAssetUrlHashed(versionId, "zig.wasm")))(),
             ]);
 
             let zirCache: ZirCacheInfo | null = null;
