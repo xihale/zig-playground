@@ -77,7 +77,7 @@ function printHelp() {
 Options:
   --select stable|scheduled|all   Which versions.json entries to build (default: all)
   --only <id>                     Build only this id (repeatable; overrides --select)
-  --skip-existing                 Skip ids that already have public/compilers/<id>/zig.wasm
+  --skip-existing                 Skip ids that already have public/compilers/<id>/meta.json
   --no-wasm-opt                   Skip wasm-opt post-process
   --fill-missing                  After build, fetch missing ids from GitHub release
   --release-tag <tag>             Release tag for --fill-missing (default: compilers)
@@ -86,7 +86,28 @@ Options:
 }
 
 function isPackaged(id) {
-  return existsSync(join(root, "public", "compilers", id, "zig.wasm"));
+  return existsSync(join(root, "public", "compilers", id, "meta.json"));
+}
+
+/**
+ * Resolve the hashed physical filename for a logical asset in a packaged
+ * compiler dir (e.g. "zls.wasm" → "zls.<hash>.wasm"). Filenames are hashed at
+ * package time, so callers must not assume the logical name exists on disk.
+ * Reads the hashed-name from meta.json (`files[logical].name`). Returns null
+ * if meta.json is missing or uses a pre-hashing shape (callers handle that).
+ */
+function resolveHashedName(id, logicalName) {
+  const dir = join(root, "public", "compilers", id);
+  const metaPath = join(dir, "meta.json");
+  if (!existsSync(metaPath)) return null;
+  try {
+    const meta = JSON.parse(readFileSync(metaPath, "utf8"));
+    const name = meta?.files?.[logicalName]?.name;
+    if (typeof name === "string" && existsSync(join(dir, name))) return join(dir, name);
+  } catch {
+    /* malformed meta.json — treat as unresolved */
+  }
+  return null;
 }
 
 function run(cmd, args, opts = {}) {
@@ -525,8 +546,8 @@ pub fn build(b: *std.Build) void {
       zlsNote = `build failed: ${e.message || e}`;
     }
   } else if (entry.zlsFallbackId) {
-    const fb = join(root, "public", "compilers", entry.zlsFallbackId, "zls.wasm");
-    if (existsSync(fb)) {
+    const fb = resolveHashedName(entry.zlsFallbackId, "zls.wasm");
+    if (fb) {
       cpSync(fb, zlsDest);
       zlsNote = `fallback from ${entry.zlsFallbackId} (ZLS does not support this Zig yet; see zls#3208)`;
       console.warn(`[${entry.id}] zls.wasm ${zlsNote}`);
@@ -707,10 +728,10 @@ function main() {
 
   console.log("\n── public/compilers ──");
   for (const v of manifest.versions) {
-    const p = join(root, "public", "compilers", v.id, "zig.wasm");
-    const z = join(root, "public", "compilers", v.id, "zls.wasm");
+    const p = resolveHashedName(v.id, "zig.wasm");
+    const z = resolveHashedName(v.id, "zls.wasm");
     console.log(
-      `  ${v.id}: zig=${existsSync(p) ? "ok" : "MISSING"} zls=${existsSync(z) ? "ok" : "none"}`,
+      `  ${v.id}: zig=${p ? "ok" : "MISSING"} zls=${z ? "ok" : "none"}`,
     );
   }
 }
