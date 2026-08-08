@@ -853,7 +853,7 @@ Replace the "Publish compilers-latest Release" step (lines 109-124). The new ver
             CREATE="--title Compiler-assets --notes Prebuilt per-version zig/zls wasm trees."
           fi
           for id in $IDS; do
-            tar -C "public/compilers" -czf "$id.tar.gz" "$id"
+            tar -C "public/compilers/$id" -czf "$id.tar.gz" .
             if [ -n "$CREATE" ]; then
               gh release create "$COMPILERS_RELEASE" "$id.tar.gz" --repo "$GITHUB_REPOSITORY" $CREATE
               CREATE=""
