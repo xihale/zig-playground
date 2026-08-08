@@ -23,6 +23,13 @@ export type VersionsManifest = {
   versions: VersionEntry[];
 };
 
+export type CompilerMetaFile = { size: number; sha256: string; name: string };
+export type CompilerMeta = {
+  id: string;
+  builtAt: string;
+  files: Record<string, CompilerMetaFile>;
+};
+
 export type ResolvedVersion = {
   id: string;
   entry: VersionEntry;
@@ -102,74 +109,42 @@ export function compilerAssetUrl(versionId: string, file: string): string {
   return `${compilerAssetBase(versionId)}${file}`;
 }
 
-/**
- * HTTP Cache-Control for `/compilers/<id>/*` (vite preview / hosts that honor it).
- *
- * Client Cache Storage (`compiler-cache.ts`) keys large assets by `meta.builtAt`.
- * Meta is re-probed on a timer — for rolling trees, half of `schedule` (master
- * `3d` → recheck every ~1.5d), not on every page load.
- *
- * - Stable pins (no `schedule`): long-lived + immutable
- * - Rolling ids (`schedule: "3d"`): a few days, not immutable (same path rebuilds)
- */
-export type CompilerCachePolicy =
-  | { kind: "immutable"; maxAgeSeconds: number }
-  | { kind: "max-age"; maxAgeSeconds: number };
+const metaMemo = new Map<string, Promise<CompilerMeta | null>>();
 
-const STABLE_MAX_AGE_SECONDS = 365 * 24 * 60 * 60; // 1y ≈ permanent for release trees
-const DEFAULT_ROLLING_SECONDS = 3 * 24 * 60 * 60; // 3d
-
-/** Parse `versions.json` schedule strings like `3d`, `12h`, `90m`. */
-export function parseScheduleSeconds(schedule: string): number {
-  const m = /^(\d+)\s*([dhms])$/i.exec(schedule.trim());
-  if (!m) return DEFAULT_ROLLING_SECONDS;
-  const n = Number(m[1]);
-  switch (m[2].toLowerCase()) {
-    case "d":
-      return n * 86400;
-    case "h":
-      return n * 3600;
-    case "m":
-      return n * 60;
-    case "s":
-      return n;
-    default:
-      return DEFAULT_ROLLING_SECONDS;
+/** Fetch (once per id per session) and return the logical→physical file map. */
+export async function compilerMeta(versionId: string): Promise<CompilerMeta | null> {
+  let p = metaMemo.get(versionId);
+  if (!p) {
+    p = (async () => {
+      try {
+        const res = await fetch(compilerAssetUrl(versionId, "meta.json"), {
+          cache: "no-store",
+        });
+        if (!res.ok) return null;
+        const data = (await res.json()) as Partial<CompilerMeta>;
+        if (!data?.files || typeof data.files !== "object") return null;
+        return data as CompilerMeta;
+      } catch {
+        return null;
+      }
+    })();
+    metaMemo.set(versionId, p);
   }
-}
-
-export function compilerCachePolicy(versionId: string): CompilerCachePolicy {
-  const entry = loadVersionsManifest().versions.find((v) => v.id === versionId);
-  if (entry?.schedule) {
-    return { kind: "max-age", maxAgeSeconds: parseScheduleSeconds(entry.schedule) };
-  }
-  return { kind: "immutable", maxAgeSeconds: STABLE_MAX_AGE_SECONDS };
+  return p;
 }
 
 /**
- * How often to re-fetch `meta.json` for a version id.
- * Rolling: half the rebuild schedule (catch updates mid-cycle without every visit).
- * Stable: same as long max-age (repackage of a pin is rare).
- *
- * Only runs when this path's version assets are fetched (e.g. never for master
- * while the user stays on `/` or `/0.15.2/`).
+ * Resolve a logical compiler asset name (e.g. "zig.wasm") to its hashed URL.
+ * Falls back to the logical URL if meta.json is missing (e.g. legacy deploy).
  */
-export function metaRevalidateSeconds(versionId: string): number {
-  const entry = loadVersionsManifest().versions.find((v) => v.id === versionId);
-  if (entry?.schedule) {
-    return Math.max(60, Math.floor(parseScheduleSeconds(entry.schedule) / 2));
-  }
-  return STABLE_MAX_AGE_SECONDS;
-}
-
-/** `Cache-Control` value for a compiler tree (preview server / future hosts that honor it). */
-export function compilerCacheControlHeader(versionId: string): string {
-  const p = compilerCachePolicy(versionId);
-  if (p.kind === "immutable") {
-    return `public, max-age=${p.maxAgeSeconds}, immutable`;
-  }
-  // Rolling trees rewrite the same URL — do not mark immutable.
-  return `public, max-age=${p.maxAgeSeconds}`;
+export async function compilerAssetUrlHashed(
+  versionId: string,
+  logicalName: string,
+): Promise<string> {
+  const meta = await compilerMeta(versionId);
+  const entry = meta?.files?.[logicalName];
+  if (!entry?.name) return compilerAssetUrl(versionId, logicalName);
+  return compilerAssetUrl(versionId, entry.name);
 }
 
 /** Extract version id from `/compilers/<id>/…` (absolute or site-relative). */
