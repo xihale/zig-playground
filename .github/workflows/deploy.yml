@@ -23,7 +23,7 @@ concurrency:
   cancel-in-progress: true
 
 # Frontend deploys on every push.
-# Compilers are REUSED from GitHub Release `compilers-latest` by default.
+# Compilers are REUSED from GitHub Release `compilers` by default.
 # Source rebuild only when:
 #   - workflow_dispatch with rebuild_compilers=true, or
 #   - release is missing an id listed in versions.json
@@ -46,18 +46,23 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-          COMPILERS_RELEASE: ${{ vars.COMPILERS_RELEASE || 'compilers-latest' }}
+          COMPILERS_RELEASE: ${{ vars.COMPILERS_RELEASE || 'compilers' }}
         run: |
           set -euo pipefail
           TAG="${COMPILERS_RELEASE}"
           mkdir -p public/compilers .zig-version-cache/release-download
           if gh release download "$TAG" --repo "$GITHUB_REPOSITORY" \
               --dir .zig-version-cache/release-download --clobber \
-              --pattern 'compilers.tar.gz' 2>/dev/null; then
-            tar -xzf .zig-version-cache/release-download/compilers.tar.gz -C public
-            echo "extracted compilers.tar.gz from $TAG"
+              --pattern '*.tar.gz' 2>/dev/null; then
+            for f in .zig-version-cache/release-download/*.tar.gz; do
+              [ -e "$f" ] || continue
+              id=$(basename "$f" .tar.gz)
+              mkdir -p "public/compilers/$id"
+              tar -xzf "$f" -C "public/compilers/$id"
+              echo "extracted $id.tar.gz"
+            done
           else
-            echo "no compilers.tar.gz on $TAG — trying fill script"
+            echo "no archives on $TAG — trying fill script"
             node scripts/fill-compilers-from-release.mjs || true
           fi
           ls -la public/compilers || true
@@ -79,7 +84,7 @@ jobs:
             import { existsSync } from "node:fs";
             import { join } from "node:path";
             const m = loadVersionsManifest();
-            const miss = m.versions.filter(v => !existsSync(join("public/compilers", v.id, "zig.wasm")));
+            const miss = m.versions.filter(v => !existsSync(join("public/compilers", v.id, "meta.json")));
             process.stdout.write(miss.map(v => v.id).join(" "));
           ')
           if [ -n "${MISSING// }" ]; then
@@ -106,7 +111,7 @@ jobs:
             import { join } from "node:path";
             const force = process.env.FORCE === "true";
             const m = loadVersionsManifest();
-            const need = m.versions.filter(v => force || !existsSync(join("public/compilers", v.id, "zig.wasm")));
+            const need = m.versions.filter(v => force || !existsSync(join("public/compilers", v.id, "meta.json")));
             const hosts = [...new Set(need.map(v => v.hostZig).filter(Boolean))];
             process.stdout.write(hosts.join("\n"));
           ')
@@ -161,7 +166,7 @@ jobs:
             import { existsSync } from "node:fs";
             import { join } from "node:path";
             const m = loadVersionsManifest();
-            const miss = m.versions.filter(v => !existsSync(join("public/compilers", v.id, "zig.wasm")));
+            const miss = m.versions.filter(v => !existsSync(join("public/compilers", v.id, "meta.json")));
             process.stdout.write(miss.map(v => v.id).join(" "));
           ')
           if [ -z "${MISSING// }" ]; then
@@ -170,14 +175,14 @@ jobs:
             exit 0
           fi
           echo "::error::Missing compiler packages: $MISSING"
-          echo "Upload compilers-latest (compilers.tar.gz), or Run workflow with rebuild_compilers=true."
+          echo "Upload compilers (per-version <id>.tar.gz), or Run workflow with rebuild_compilers=true."
           echo "Note: source builds need ziglang/zig@0.15.2 + patches/ (not zigtools/zig@wasm32-wasi)."
           exit 1
 
       - name: Require default compiler
         run: |
           DEFAULT=$(node -p "require('./versions.json').default")
-          test -f "public/compilers/${DEFAULT}/zig.wasm"
+          test -f "public/compilers/${DEFAULT}/meta.json"
           echo "compilers ready:"
           ls public/compilers
 

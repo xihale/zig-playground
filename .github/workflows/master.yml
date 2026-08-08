@@ -54,16 +54,21 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-          COMPILERS_RELEASE: ${{ vars.COMPILERS_RELEASE || 'compilers-latest' }}
+          COMPILERS_RELEASE: ${{ vars.COMPILERS_RELEASE || 'compilers' }}
         run: |
-          # Prefer full compilers.tar.gz so zlsFallbackId targets exist before build.
+          set -euo pipefail
           TAG="${COMPILERS_RELEASE}"
           mkdir -p public/compilers .zig-version-cache/release-download
           if gh release download "$TAG" --repo "$GITHUB_REPOSITORY" \
               --dir .zig-version-cache/release-download --clobber \
-              --pattern 'compilers.tar.gz' 2>/dev/null; then
-            tar -xzf .zig-version-cache/release-download/compilers.tar.gz -C public
-            echo "extracted $TAG"
+              --pattern '*.tar.gz' 2>/dev/null; then
+            for f in .zig-version-cache/release-download/*.tar.gz; do
+              [ -e "$f" ] || continue
+              id=$(basename "$f" .tar.gz)
+              mkdir -p "public/compilers/$id"
+              tar -xzf "$f" -C "public/compilers/$id"
+              echo "extracted $id.tar.gz"
+            done
           else
             node scripts/fill-compilers-from-release.mjs || true
           fi
@@ -97,7 +102,7 @@ jobs:
             import { existsSync } from "node:fs";
             import { join } from "node:path";
             const m = loadVersionsManifest();
-            const miss = m.versions.filter(v => !existsSync(join("public/compilers", v.id, "zig.wasm")));
+            const miss = m.versions.filter(v => !existsSync(join("public/compilers", v.id, "meta.json")));
             process.stdout.write(miss.map(v => v.id).join(" "));
           ')
           if [ -n "${MISSING// }" ]; then
@@ -106,22 +111,38 @@ jobs:
           fi
           ls -laR public/compilers | head -40
 
-      - name: Publish compilers-latest Release
+      - name: Publish compilers Release (per rebuilt id)
         env:
           GH_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-          COMPILERS_RELEASE: ${{ vars.COMPILERS_RELEASE || 'compilers-latest' }}
+          COMPILERS_RELEASE: ${{ vars.COMPILERS_RELEASE || 'compilers' }}
         run: |
           set -euo pipefail
-          tar -C public -czf compilers.tar.gz compilers
+          IDS=$(node --input-type=module -e '
+            import { loadVersionsManifest, selectVersions } from "./scripts/versions-lib.mjs";
+            process.stdout.write(selectVersions(loadVersionsManifest(), { select: "scheduled" }).map(v => v.id).join(" "));
+          ')
           if gh release view "$COMPILERS_RELEASE" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$COMPILERS_RELEASE" compilers.tar.gz --repo "$GITHUB_REPOSITORY" --clobber
+            for id in $IDS; do
+              tar -C "public/compilers/$id" -czf "$id.tar.gz" .
+              gh release upload "$COMPILERS_RELEASE" "$id.tar.gz" --repo "$GITHUB_REPOSITORY" --clobber
+              echo "uploaded $id.tar.gz to $COMPILERS_RELEASE"
+            done
           else
-            gh release create "$COMPILERS_RELEASE" compilers.tar.gz --repo "$GITHUB_REPOSITORY" \
-              --title "Compiler assets (not in git)" \
-              --notes "Prebuilt zig/zls wasm trees for Pages deploy."
+            FIRST=1
+            for id in $IDS; do
+              tar -C "public/compilers/$id" -czf "$id.tar.gz" .
+              if [ "$FIRST" = "1" ]; then
+                gh release create "$COMPILERS_RELEASE" "$id.tar.gz" --repo "$GITHUB_REPOSITORY" \
+                  --title "Compiler assets (not in git)" \
+                  --notes "Prebuilt per-version zig/zls wasm trees for Pages deploy."
+                FIRST=0
+              else
+                gh release upload "$COMPILERS_RELEASE" "$id.tar.gz" --repo "$GITHUB_REPOSITORY" --clobber
+              fi
+              echo "uploaded $id.tar.gz to $COMPILERS_RELEASE"
+            done
           fi
-          echo "uploaded compilers.tar.gz to $COMPILERS_RELEASE"
 
       - name: Frontend build + assemble
         env:

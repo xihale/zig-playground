@@ -1,6 +1,6 @@
 import { WASI, PreopenDirectory, Fd, ConsoleStdout } from "@bjorn3/browser_wasi_shim";
 import { compileWasmAsset, getZigArchive } from "../utils";
-import { compilerAssetUrl } from "../version";
+import { compilerAssetUrlHashed } from "../version";
 
 class Stdio extends Fd {
     constructor() {
@@ -72,7 +72,7 @@ async function boot(versionId: string) {
         ];
         const wasi = new WASI(args, env, fds, { debug: false });
 
-        const zlsModule = await compileWasmAsset(compilerAssetUrl(versionId, "zls.wasm"));
+        const zlsModule = await compileWasmAsset(await compilerAssetUrlHashed(versionId, "zls.wasm"));
         const localInstance = await WebAssembly.instantiate(zlsModule, {
             "wasi_snapshot_preview1": wasi.wasiImport,
         });

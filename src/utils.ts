@@ -1,7 +1,7 @@
 import { untar } from "@andrewbranch/untar.js";
 import { Directory, File, ConsoleStdout, wasi as wasi_defs } from "@bjorn3/browser_wasi_shim";
 import { fetchCompilerResponse } from "./compiler-cache";
-import { compilerAssetUrl } from "./version";
+import { compilerAssetUrlHashed } from "./version";
 
 export async function fetchAssetBuffer(url: URL | string): Promise<ArrayBuffer> {
     const href = typeof url === "string" ? url : url.href;
@@ -26,7 +26,8 @@ export async function compileWasmAsset(url: URL | string): Promise<WebAssembly.M
 
 /** Load std lib tarball for a specific compiler version id. */
 export async function getZigArchive(versionId: string): Promise<Directory> {
-    return loadZigArchive(compilerAssetUrl(versionId, "zig.tar.gz"));
+    const url = await compilerAssetUrlHashed(versionId, "zig.tar.gz");
+    return loadZigArchive(url);
 }
 
 async function loadZigArchive(tarUrl: string): Promise<Directory> {

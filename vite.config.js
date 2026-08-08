@@ -1,38 +1,17 @@
 import { defineConfig } from "vite";
-import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 // Site root (default). Custom domain: zp.xihale.top
 // Subpath deploys only: set VITE_BASE=/your-prefix/ in CI.
 const base = process.env.VITE_BASE || "/";
 
-const versions = JSON.parse(
-  readFileSync(resolve("versions.json"), "utf8"),
-);
+const IMMUTABLE_MAX_AGE = 365 * 24 * 60 * 60; // 1y — content-addressed files never change at a URL
 
-/** @param {string} schedule e.g. "3d" */
-function parseScheduleSeconds(schedule) {
-  const m = /^(\d+)\s*([dhms])$/i.exec(String(schedule).trim());
-  if (!m) return 3 * 86400;
-  const n = Number(m[1]);
-  switch (m[2].toLowerCase()) {
-    case "d":
-      return n * 86400;
-    case "h":
-      return n * 3600;
-    case "m":
-      return n * 60;
-    case "s":
-      return n;
-    default:
-      return 3 * 86400;
-  }
-}
-
-const STABLE_MAX_AGE = 365 * 24 * 60 * 60; // 1y
-const HASHED_ASSET_MAX_AGE = STABLE_MAX_AGE;
-
-/** Mirror src/version.ts compilerCacheControlHeader for preview. */
+/**
+ * Cache-Control for `vite preview` (GitHub Pages ignores custom headers).
+ * Content-addressed files (hashed compiler assets, Vite UI chunks) are
+ * immutable; the SPA shell, versions.json, and meta.json must revalidate.
+ */
 function cacheControlForPath(path) {
   if (
     path === "/" ||
@@ -44,21 +23,15 @@ function cacheControlForPath(path) {
     return "no-cache";
   }
 
-  const m = path.match(/\/compilers\/([^/]+)\//);
-  if (m) {
-    const id = m[1];
-    const entry = versions.versions.find((v) => v.id === id);
-    if (entry?.schedule) {
-      // Rolling (master): a few days, not immutable — same URL gets rebuilt.
-      return `public, max-age=${parseScheduleSeconds(entry.schedule)}`;
-    }
-    // Fixed release trees: permanent for practical purposes.
-    return `public, max-age=${STABLE_MAX_AGE}, immutable`;
+  // Compiler assets under /compilers/<id>/ are filename-hashed → immutable.
+  // meta.json (the one fixed-name file) is handled by the no-cache branch above.
+  if (/\/compilers\/[^/]+\//.test(path)) {
+    return `public, max-age=${IMMUTABLE_MAX_AGE}, immutable`;
   }
 
   // Vite content-hashed UI chunks under /assets/
   if (/\.(?:js|css|wasm|a|gz|svg|png|woff2?)$/i.test(path)) {
-    return `public, max-age=${HASHED_ASSET_MAX_AGE}, immutable`;
+    return `public, max-age=${IMMUTABLE_MAX_AGE}, immutable`;
   }
 
   return null;

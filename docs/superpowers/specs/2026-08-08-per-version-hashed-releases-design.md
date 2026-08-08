@@ -183,6 +183,13 @@ correct forever; `meta.json` is fetched `cache: "no-store"` (it must reflect new
 hashes). No sweeping, no probing, no master-3-day logic. The whole point of
 hashing was to make this deletion possible.
 
+**Quota tradeoff:** with hashing, each master rebuild produces a *new* pathname
+(`zig.<newhash>.wasm`), and old master hashes are never requested again once
+`meta.json` rolls forward — so they accumulate until the browser's Cache Storage
+evicts LRU under quota. This is an accepted consequence: re-adding sweep logic
+would reintroduce the rev-like machinery hashing eliminates. Stable pins (whose
+hashes never change once published) are unaffected.
+
 **`src/version.ts`** — drop `parseScheduleSeconds` / `compilerCachePolicy` /
 `metaRevalidateSeconds` / `compilerCacheControlHeader` (the rolling-vs-stable
 revalidate distinction collapses: everything hashed is immutable, `meta.json` is

@@ -5,7 +5,7 @@ import {
     loadZirCacheEntries,
     saveZirCacheEntries,
 } from "../zir-cache";
-import { compilerAssetUrl } from "../version";
+import { compilerAssetUrlHashed } from "../version";
 
 type Ready = {
     libDirectory: Directory;
@@ -92,8 +92,8 @@ function ensureReady(): Promise<Ready> {
             const [zirHit, libDirectory, compilerRt, zigModule] = await Promise.all([
                 loadZirCacheEntries(id),
                 getZigArchive(id),
-                fetchAssetBuffer(compilerAssetUrl(id, "libcompiler_rt.a")),
-                compileWasmAsset(compilerAssetUrl(id, "zig.wasm")),
+                (async () => fetchAssetBuffer(await compilerAssetUrlHashed(id, "libcompiler_rt.a")))(),
+                (async () => compileWasmAsset(await compilerAssetUrlHashed(id, "zig.wasm")))(),
             ]);
 
             let zirCache: Ready["zirCache"] = null;
