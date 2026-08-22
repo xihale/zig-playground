@@ -1,25 +1,24 @@
-name: Master compiler (periodic)
+name: Master compiler (manual)
 
-# Rebuild versions.json entries with "schedule" (e.g. master ~every 3 days).
-# Manual: Actions → Master compiler (periodic) → Run workflow
+# Rebuild versions.json entries with "schedule" (e.g. master). Currently
+# disabled — no cron; manual run only via workflow_dispatch.
 #
 # Official Zig development lives on Codeberg (GitHub ziglang/zig master is a stub).
 # hostZig=master (nightly) + versions.json build:"in-tree" builds zig.wasm inside
 # the compiler source tree. ZLS lags master (zls#3208) → zlsFallbackId.
 
+# Disabled: no periodic master rebuilds for now (re-enable by restoring the
+# schedule below). Manual only: Actions → Master compiler → Run workflow.
 on:
-  schedule:
-    - cron: "0 0 */3 * *"
   workflow_dispatch:
 
 permissions:
   contents: write
-  pages: write
-  id-token: write
 
 jobs:
   build-scheduled:
-    runs-on: ubuntu-latest
+    # Self-hosted runner on the zzy_hk VPS (zig-ci user, no sudo).
+    runs-on: [self-hosted, zig-playground]
     steps:
       - uses: actions/checkout@v4
 
@@ -45,10 +44,7 @@ jobs:
         with:
           version: ${{ steps.host.outputs.version }}
 
-      - name: Install binaryen
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y binaryen
+      # binaryen is preinstalled on the runner host (wasm-opt in /usr/bin).
 
       - name: Fill non-scheduled ids from release (needed for zlsFallbackId)
         env:
@@ -151,8 +147,8 @@ jobs:
           npm ci
           npm run build
 
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: "dist/"
-
-      - uses: actions/deploy-pages@v4
+      - name: Publish to /srv/zig-playground
+        run: |
+          rsync -a --delete --delay-updates \
+            --chmod=Du=rwx,Dgo=rx,Fu=rw,Fgo=r \
+            dist/ /srv/zig-playground/

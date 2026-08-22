@@ -3,7 +3,8 @@ name: Deploy
 on:
   push:
     branches: ["main", "master"]
-  pull_request:
+  # No pull_request trigger: jobs run on a self-hosted runner (our VPS) —
+  # never execute fork PR code there.
   workflow_dispatch:
     inputs:
       rebuild_compilers:
@@ -13,13 +14,12 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
+# Deploy = local rsync on the runner host; Caddy serves /srv/zig-playground.
 # Prevent older slow jobs from overwriting a newer deploy (seen with
 # ZlsWorker fix racing the prior 9m build).
 concurrency:
-  group: pages-deploy
+  group: server-deploy
   cancel-in-progress: true
 
 # Frontend deploys on every push.
@@ -32,7 +32,8 @@ concurrency:
 # Do NOT clone zigtools/zig@wasm32-wasi with host 0.15.2 — Build API mismatch.
 jobs:
   build:
-    runs-on: ubuntu-latest
+    # Self-hosted runner on the zzy_hk VPS (zig-ci user, no sudo).
+    runs-on: [self-hosted, zig-playground]
 
     steps:
       - uses: actions/checkout@v4
@@ -193,9 +194,9 @@ jobs:
           npm ci
           npm run build
 
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: "dist/"
-
-      - uses: actions/deploy-pages@v4
+      - name: Publish to /srv/zig-playground
         if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+        run: |
+          rsync -a --delete --delay-updates \
+            --chmod=Du=rwx,Dgo=rx,Fu=rw,Fgo=r \
+            dist/ /srv/zig-playground/
