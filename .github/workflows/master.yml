@@ -147,6 +147,9 @@ jobs:
           npm ci
           npm run build
 
+      - name: Pre-gzip wasm (Caddy serves it precompressed, no runtime CPU)
+        run: find dist -name "*.wasm" -exec gzip -k9 {} +
+
       - name: Publish to /srv/zig-playground
         run: |
           rsync -a --delete --delay-updates \
