@@ -27,6 +27,9 @@ receiver process exists only for the seconds a request (or deploy) takes.
 Description=zig-playground deploy webhook (socket-activated)
 
 [Socket]
+# Accept=yes → template service (zig-deploy@.service), one instance per
+# connection with the accepted socket as fd 0/1 (inetd-style).
+Accept=yes
 ListenStream=/run/zig-deploy.sock
 SocketUser=zig-ci
 SocketGroup=caddy

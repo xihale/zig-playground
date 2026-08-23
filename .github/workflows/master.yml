@@ -6,9 +6,10 @@ name: Master compiler (manual)
 # Official Zig development lives on Codeberg (GitHub ziglang/zig master is a stub).
 # hostZig=master (nightly) + versions.json build:"in-tree" builds zig.wasm inside
 # the compiler source tree. ZLS lags master (zls#3208) → zlsFallbackId.
-
-# Disabled: no periodic master rebuilds for now (re-enable by restoring the
-# schedule below). Manual only: Actions → Master compiler → Run workflow.
+#
+# Runs on GitHub-hosted runners. Publishing the site is NOT done here — after
+# uploading <id>.tar.gz to the `compilers` release we poke the zp.xihale.top
+# webhook; the server redeploys itself (scripts/server/deploy.sh).
 on:
   workflow_dispatch:
 
@@ -17,8 +18,7 @@ permissions:
 
 jobs:
   build-scheduled:
-    # Self-hosted runner on the zzy_hk VPS (zig-ci user, no sudo).
-    runs-on: [self-hosted, zig-playground]
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -44,7 +44,10 @@ jobs:
         with:
           version: ${{ steps.host.outputs.version }}
 
-      # binaryen is preinstalled on the runner host (wasm-opt in /usr/bin).
+      - name: Install binaryen
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y binaryen
 
       - name: Fill non-scheduled ids from release (needed for zlsFallbackId)
         env:
@@ -131,7 +134,7 @@ jobs:
               if [ "$FIRST" = "1" ]; then
                 gh release create "$COMPILERS_RELEASE" "$id.tar.gz" --repo "$GITHUB_REPOSITORY" \
                   --title "Compiler assets (not in git)" \
-                  --notes "Prebuilt per-version zig/zls wasm trees for Pages deploy."
+                  --notes "Prebuilt per-version zig/zls wasm trees for the server-side deploy."
                 FIRST=0
               else
                 gh release upload "$COMPILERS_RELEASE" "$id.tar.gz" --repo "$GITHUB_REPOSITORY" --clobber
@@ -140,18 +143,14 @@ jobs:
             done
           fi
 
-      - name: Frontend build + assemble
+      - name: Poke server webhook (redeploy picks up the new compilers)
         env:
-          VITE_BASE: ${{ vars.VITE_BASE || '/' }}
+          SECRET: ${{ secrets.ZP_DEPLOY_WEBHOOK_SECRET }}
         run: |
-          npm ci
-          npm run build
-
-      - name: Pre-gzip wasm (Caddy serves it precompressed, no runtime CPU)
-        run: find dist -name "*.wasm" -exec gzip -k9 {} +
-
-      - name: Publish to /srv/zig-playground
-        run: |
-          rsync -a --delete --delay-updates \
-            --chmod=Du=rwx,Dgo=rx,Fu=rw,Fgo=r \
-            dist/ /srv/zig-playground/
+          set -euo pipefail
+          body="{\"ref\":\"refs/heads/master\",\"after\":\"${GITHUB_SHA}\"}"
+          sig="sha256=$(printf '%s' "$body" | openssl dgst -sha256 -hmac "$SECRET" | awk '{print $NF}')"
+          curl -fsS -X POST https://zp.xihale.top/hooks/zp-deploy \
+            -H 'Content-Type: application/json' -H 'X-GitHub-Event: push' \
+            -H "X-Hub-Signature-256: $sig" -d "$body"
+          echo "server redeploy triggered"
