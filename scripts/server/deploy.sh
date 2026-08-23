@@ -42,6 +42,15 @@ git fetch --depth=1 origin "$BRANCH"
 git checkout -q -B "$BRANCH" FETCH_HEAD
 # untracked caches (public/compilers, node_modules, .zig-version-cache) survive on purpose
 
+# We were spawned from the pre-fetch checkout, and bash keeps executing that
+# inode after the checkout above rewrites this file. If deploy.sh itself
+# changed, re-exec so the new revision's logic publishes this push (cmp equal
+# after the re-exec, so this fires at most once).
+if ! cmp -s "$REPO/scripts/server/deploy.sh" "$0"; then
+  say "deploy.sh changed in ${BRANCH} — re-execing from new checkout"
+  exec /bin/bash "$0" "$@"
+fi
+
 # --- compilers: incremental fill from the public release -------------------
 mkdir -p public/compilers .zig-version-cache
 mapfile -t IDS < <(node --input-type=module -e '
