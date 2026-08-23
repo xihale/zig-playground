@@ -11,19 +11,17 @@ const SHORT_MAX_AGE = 24 * 60 * 60; // 1d — manifests: zp-loader.js, versions.
 /**
  * Cache-Control for `vite preview`; production is the Caddy site block on
  * zzy_hk (zp.xihale.top), which mirrors these tiers and adds ACAO *:
- *   HTML shell  -> no-cache (stale HTML would reference rsync-deleted assets)
- *   manifests   -> 1d (zp-loader.js, versions.json, meta.json)
- *   hashed      -> immutable (compiler assets, Vite UI chunks)
+ *   shell + manifests -> 1d (HTML self-heals via the inline zp-refresh
+ *                        script in index.html when hashed assets go missing)
+ *   hashed            -> immutable (compiler assets, Vite UI chunks)
  */
 function cacheControlForPath(path) {
-  if (path === "/" || path.endsWith(".html")) {
-    // Shell must revalidate so clients pick up new asset hashes after deploys.
-    return "no-cache";
-  }
-
-  // Manifests: short 1d cache — consumers pick up new builds within a day.
+  // Manifests and the HTML shell: short 1d cache. Stale HTML referencing
+  // rsync-deleted assets recovers via the zp-refresh self-heal script.
   if (
+    path === "/" ||
     path === "/zp-loader.js" ||
+    path.endsWith(".html") ||
     path.endsWith("versions.json") ||
     path.endsWith("/meta.json")
   ) {

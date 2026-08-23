@@ -4,6 +4,31 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Zig Playground</title>
+    <!-- Self-heal stale HTML: the shell is cached 1d, but a deploy's rsync
+         --delete removes old hashed assets. If a hashed /assets/ script or
+         stylesheet fails to load, refetch the shell once with a cache-busting
+         query param; its presence in the URL is the no-retry-loop guard. -->
+    <script>
+    (function () {
+      window.addEventListener("error", function (e) {
+        var el = e.target;
+        if (!el || (el.tagName !== "SCRIPT" && el.tagName !== "LINK")) return;
+        var src = String(el.src || el.href || "");
+        if (src.indexOf(location.origin + "/assets/") !== 0) return;
+        var u = new URL(location.href);
+        if (u.searchParams.has("zp-refresh")) return; // retried once already
+        u.searchParams.set("zp-refresh", String(Date.now()));
+        location.replace(u.href);
+      }, true);
+      window.addEventListener("load", function () {
+        var u = new URL(location.href);
+        if (u.searchParams.has("zp-refresh")) {
+          u.searchParams.delete("zp-refresh");
+          history.replaceState(null, "", u.href);
+        }
+      });
+    })();
+    </script>
     <link rel="stylesheet" href="style/style.css">
     <!-- Restore split ratio before first paint (avoids jump after module load). -->
     <script>
