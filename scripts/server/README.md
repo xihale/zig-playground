@@ -109,5 +109,4 @@ sudo -u zig-ci bash /home/zig-ci/zig-playground/scripts/server/deploy.sh
 Rollback = `git` any old sha in the clone and re-run deploy.sh. Compiler
 rebuilds (new versions.json ids missing from the `compilers` release) happen
 inside deploy.sh via `build-compilers.mjs` with hostZig from
-`~/.local/share/zvm`; or trigger the manual `master.yml` workflow which
-uploads fresh `<id>.tar.gz` to the release.
+`~/.local/share/zvm`.

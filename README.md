@@ -11,7 +11,6 @@ Run and explore Zig in your browser, with compiler and LSP support built in.
 | `/` | Configurable default (`versions.json` → `default`, currently **0.16.0**) |
 | `/0.16.0/` | Current stable pin (same binaries as `/`) |
 | `/0.15.2/` | Older pin (binaries from Release; rebuild only when forced/missing) |
-| `/master/` | Tracking build (`schedule: "3d"`, CI + manual) |
 
 Shared UI under `/assets/`. Per-version compilers:
 
@@ -88,7 +87,6 @@ const crt = await fetchCompilerFile("0.16.0", "libcompiler_rt.a");
 |-------|------|
 | `default` | `/` resolves to this id |
 | `versions[].id` / `label` | URL path + dropdown |
-| `versions[].schedule` | If set (e.g. `"3d"`), rebuilt by periodic/manual **Master** workflow |
 | `versions[].zig.path` / `zig.git` | Source for that id (local path preferred; else clone `git.ref`) |
 | `versions[].zig.patch` | Optional repo-relative patch applied after clone (CI) |
 | `versions[].zls.url` / `hash` | Paired ZLS package |
@@ -100,20 +98,16 @@ const crt = await fetchCompilerFile("0.16.0", "libcompiler_rt.a");
 |----|-------|-----|---------|-------|
 | `0.16.0` | **`in-tree`** | **`codeberg.org/ziglang/zig@0.16.0`** | `0.16.0` | zig.wasm in-tree + ZLS 0.16.0 (Zig is not a package from 0.16) |
 | `0.15.2` | `playground` | `github.com/ziglang/zig@0.15.2` | `0.15.2` | full zig+zls via repo `build.zig` |
-| `master` | **`in-tree`** | **`codeberg.org/ziglang/zig@master`** | **`master`** (nightly) | builds wasm inside the Zig tree; ZLS lags ([zls#3208](https://github.com/zigtools/zls/issues/3208)) → `zlsFallbackId: 0.16.0` |
 
-Local overrides: `../zig-0.16.0`, `../zig-wasm` (0.15.2), `../zig-master`. Hosts via `zvm i 0.16.0` / `zvm i master`.
+Local overrides: `../zig-0.16.0`, `../zig-wasm` (0.15.2). Hosts via `zvm i 0.16.0`.
 
-```bash
-# master compiler (needs host Zig master / nightly)
-zvm i master   # or: export ZIG=$HOME/.local/share/zvm/master/zig
-npm run compilers:scheduled
-```
+(A `master` tracking build existed until 2026-08; re-enable by restoring the
+versions.json entry — the toolchain in scripts/ still supports
+`schedule`/`hostZig: master` in-tree builds.)
 
 ```bash
 npm run compilers:plan          # dry-run: who would build
-npm run compilers:stable        # no schedule
-npm run compilers:scheduled     # has schedule (master, …)
+npm run compilers:stable        # all pinned versions
 npm run compilers -- --only 0.16.0
 ```
 

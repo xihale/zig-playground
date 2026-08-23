@@ -39,26 +39,6 @@
         "url": "git+https://github.com/zigtools/zls?ref=0.15.1#f91b2e1e305e5d5bd3725aea90f9f9bfb3dce055",
         "hash": "zls-0.15.1-rmm5fgQ2JADjDh84Ja3pDBZ1io_kKdHS2YhQyvBYz66r"
       }
-    },
-    {
-      "id": "master",
-      "label": "master",
-      "schedule": "3d",
-      "build": "in-tree",
-      "hostZig": "master",
-      "zig": {
-        "path": "../zig-master",
-        "git": {
-          "repo": "https://codeberg.org/ziglang/zig",
-          "ref": "master"
-        },
-        "patch": "patches/zig-master-playground-wasm.patch"
-      },
-      "zlsFallbackId": "0.16.0",
-      "zls": {
-        "url": "git+https://github.com/zigtools/zls?ref=master#8da87d4f3305a550e7b739bad764e34bf1e46a08",
-        "hash": "zls-0.17.0-dev-rmm5fhsnJgACAm2dSuoMNDK6QziDk419sy5-ORvIiL0y"
-      }
     }
   ]
 }
