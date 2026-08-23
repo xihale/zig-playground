@@ -38,18 +38,25 @@ fi
 
 say "=== deploy start (${BRANCH}, sha=${ZP_PUSH_SHA:-unknown}) ==="
 
+# Snapshot the running script BEFORE the fetch: bash keeps executing the old
+# inode across the checkout, but $0 is just a path and resolves to the new
+# file afterwards — path-to-path comparison can never detect the change.
+SELF_SNAP=$(mktemp)
+cat "$0" > "$SELF_SNAP"
+
 git fetch --depth=1 origin "$BRANCH"
 git checkout -q -B "$BRANCH" FETCH_HEAD
 # untracked caches (public/compilers, node_modules, .zig-version-cache) survive on purpose
 
-# We were spawned from the pre-fetch checkout, and bash keeps executing that
-# inode after the checkout above rewrites this file. If deploy.sh itself
-# changed, re-exec so the new revision's logic publishes this push (cmp equal
-# after the re-exec, so this fires at most once).
-if ! cmp -s "$REPO/scripts/server/deploy.sh" "$0"; then
+# We were spawned from the pre-fetch checkout; if deploy.sh itself changed,
+# re-exec so the new revision's logic publishes this push. After the re-exec
+# the snapshot equals the file, so this fires at most once.
+if ! cmp -s "$SELF_SNAP" "$REPO/scripts/server/deploy.sh"; then
+  rm -f "$SELF_SNAP"
   say "deploy.sh changed in ${BRANCH} — re-execing from new checkout"
-  exec /bin/bash "$0" "$@"
+  exec /bin/bash "$REPO/scripts/server/deploy.sh" "$@"
 fi
+rm -f "$SELF_SNAP"
 
 # --- compilers: incremental fill from the public release -------------------
 mkdir -p public/compilers .zig-version-cache
