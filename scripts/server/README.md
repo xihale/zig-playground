@@ -101,7 +101,7 @@ gh api -X POST repos/xihale/zig-playground/hooks \
 ssh zzy_hk
 tail -f /home/zig-ci/deploy.log                  # deploy output
 journalctl -t zig-deploy@ -e                     # receiver lifecycle (start/exit)
-curl -s https://zp.xihale.top/deploy-meta.json   # what sha is live (1d cache)
+curl -s https://zp.xihale.top/deploy-meta.json   # what sha is live (5d cache)
 # manual deploy:
 sudo -u zig-ci bash /home/zig-ci/zig-playground/scripts/server/deploy.sh
 ```

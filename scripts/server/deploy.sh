@@ -114,10 +114,23 @@ find dist -name "*.wasm" -exec gzip -k9 {} +
 printf '{"sha":"%s","branch":"%s","deployedAt":"%s"}\n' \
   "$(git rev-parse HEAD)" "$BRANCH" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > dist/deploy-meta.json
 
-rsync -a --delete --delay-updates \
+# Shells/manifests/compilers replace wholesale. Hashed UI chunks retire into
+# a timestamped attic instead of being deleted: a shell cached for 5d may
+# still reference them (max-age set in vite.config.js / the Caddy block —
+# keep TTL < retention when changing either side). Attic dirs are pruned by
+# their own age, i.e. measured from retirement, independent of deploy cadence.
+# $HOME (not /srv) — web-served tree + ReadWritePaths=…/srv/zig-playground only.
+ATTIC="$HOME/zp-attic"
+mkdir -p "$ATTIC"
+rsync -a --delete --delay-updates --exclude=/assets \
   --chmod=Du=rwx,Dgo=rx,Fu=rw,Fgo=r \
   dist/ "$DEST/"
-say "published $(git rev-parse --short HEAD) → $DEST"
+rsync -a --delete --backup --backup-dir="$ATTIC/$(date -u +%Y%m%dT%H%M%S)" \
+  --chmod=Du=rwx,Dgo=rx,Fu=rw,Fgo=r \
+  dist/assets/ "$DEST/assets/"
+# GNU find rounds age up: +6 = 7 full days = 5d shell TTL + 2d margin.
+find "$ATTIC" -mindepth 1 -maxdepth 1 -type d -mtime +6 -exec rm -rf {} +
+say "published $(git rev-parse --short HEAD) → $DEST (attic: $(du -sh "$ATTIC" 2>/dev/null | cut -f1))"
 
 say "=== deploy done ==="
 if [ -e "$RERUN" ]; then

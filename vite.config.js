@@ -6,18 +6,18 @@ import { resolve } from "node:path";
 const base = process.env.VITE_BASE || "/";
 
 const IMMUTABLE_MAX_AGE = 365 * 24 * 60 * 60; // 1y — content-addressed files never change at a URL
-const SHORT_MAX_AGE = 24 * 60 * 60; // 1d — manifests: zp-loader.js, versions.json, meta.json
+const SHORT_MAX_AGE = 5 * 24 * 60 * 60; // 5d — manifests: zp-loader.js, versions.json, meta.json
 
 /**
  * Cache-Control for `vite preview`; production is the Caddy site block on
  * zzy_hk (zp.xihale.top), which mirrors these tiers and adds ACAO *:
- *   shell + manifests -> 1d (HTML self-heals via the inline zp-refresh
- *                        script in index.html when hashed assets go missing)
+ *   shell + manifests -> 5d (retired hashed assets survive in the server-side
+ *                        attic ~7d — deploy.sh — so a cached shell never 404s)
  *   hashed            -> immutable (compiler assets, Vite UI chunks)
  */
 function cacheControlForPath(path) {
-  // Manifests and the HTML shell: short 1d cache. Stale HTML referencing
-  // rsync-deleted assets recovers via the zp-refresh self-heal script.
+  // Manifests and the HTML shell: 5d cache. Must stay below the server-side
+  // retired-asset retention (scripts/server/deploy.sh attic, ~7d).
   if (
     path === "/" ||
     path === "/zp-loader.js" ||
