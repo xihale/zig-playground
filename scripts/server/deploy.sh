@@ -134,7 +134,10 @@ mkdir -p "$ATTIC"
 rsync -a --delete --delay-updates --exclude=/assets \
   --chmod=Du=rwx,Dgo=rx,Fu=rw,Fgo=r \
   dist/ "$DEST/"
-rsync -a --delete --backup --backup-dir="$ATTIC/$(date -u +%Y%m%dT%H%M%S)" \
+# --checksum: dist mtimes are always fresh, so quick-check would rewrite (and
+# thus --backup) every file each deploy; content comparison makes the attic
+# hold only genuinely retired assets.
+rsync -a --delete --checksum --backup --backup-dir="$ATTIC/$(date -u +%Y%m%dT%H%M%S)" \
   --chmod=Du=rwx,Dgo=rx,Fu=rw,Fgo=r \
   dist/assets/ "$DEST/assets/"
 # GNU find rounds age up: +6 = 7 full days = 5d shell TTL + 2d margin.
