@@ -6,22 +6,28 @@ import { resolve } from "node:path";
 const base = process.env.VITE_BASE || "/";
 
 const IMMUTABLE_MAX_AGE = 365 * 24 * 60 * 60; // 1y — content-addressed files never change at a URL
+const SHORT_MAX_AGE = 24 * 60 * 60; // 1d — manifests: zp-loader.js, versions.json, meta.json
 
 /**
- * Cache-Control for `vite preview` (GitHub Pages ignores custom headers).
- * Content-addressed files (hashed compiler assets, Vite UI chunks) are
- * immutable; the SPA shell, versions.json, and meta.json must revalidate.
+ * Cache-Control for `vite preview`; production is the Caddy site block on
+ * zzy_hk (zp.xihale.top), which mirrors these tiers and adds ACAO *:
+ *   HTML shell  -> no-cache (stale HTML would reference rsync-deleted assets)
+ *   manifests   -> 1d (zp-loader.js, versions.json, meta.json)
+ *   hashed      -> immutable (compiler assets, Vite UI chunks)
  */
 function cacheControlForPath(path) {
+  if (path === "/" || path.endsWith(".html")) {
+    // Shell must revalidate so clients pick up new asset hashes after deploys.
+    return "no-cache";
+  }
+
+  // Manifests: short 1d cache — consumers pick up new builds within a day.
   if (
-    path === "/" ||
     path === "/zp-loader.js" ||
-    path.endsWith(".html") ||
     path.endsWith("versions.json") ||
     path.endsWith("/meta.json")
   ) {
-    // Shell + manifest must revalidate so clients pick up new asset hashes / builds.
-    return "no-cache";
+    return `public, max-age=${SHORT_MAX_AGE}`;
   }
 
   // Compiler assets under /compilers/<id>/ are filename-hashed → immutable.
@@ -38,9 +44,9 @@ function cacheControlForPath(path) {
   return null;
 }
 
-// Note: GitHub Pages ignores custom Cache-Control (always max-age=600).
-// Production longevity for compilers is handled by src/compiler-cache.ts (Cache Storage).
-// These headers apply to `vite preview` and any host that honors them.
+// Note: production headers live in the Caddy site block on zzy_hk; these
+// apply to `vite preview`. Client-side longevity for compilers is handled by
+// src/compiler-cache.ts (Cache Storage).
 export default defineConfig({
   base,
   publicDir: "public",
