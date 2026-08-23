@@ -6,21 +6,30 @@ import { resolve } from "node:path";
 const base = process.env.VITE_BASE || "/";
 
 const IMMUTABLE_MAX_AGE = 365 * 24 * 60 * 60; // 1y — content-addressed files never change at a URL
-const SHORT_MAX_AGE = 5 * 24 * 60 * 60; // 5d — manifests: zp-loader.js, versions.json, meta.json
+const SHORT_MAX_AGE = 5 * 24 * 60 * 60; // 5d — manifests: versions.json, meta.json
 
 /**
  * Cache-Control for `vite preview`; production is the Caddy site block on
  * zzy_hk (zp.xihale.top), which mirrors these tiers and adds ACAO *:
+ *   zp-loader.js      -> no-cache (fixed-name remote code, byte-pinned by
+ *                        consumers via loaderSha256; must revalidate so a
+ *                        re-pin never races a stale browser cache)
  *   shell + manifests -> 5d (retired hashed assets survive in the server-side
  *                        attic ~7d — deploy.sh — so a cached shell never 404s)
  *   hashed            -> immutable (compiler assets, Vite UI chunks)
  */
 function cacheControlForPath(path) {
+  // zp-loader.js: fixed-name SDK consumed cross-site and byte-pinned by
+  // consumers (loaderSha256) — revalidate always, else a consumer's re-pin
+  // fails against a stale browser cache (fail-closed = bricked compiler).
+  if (path === "/zp-loader.js") {
+    return "no-cache";
+  }
+
   // Manifests and the HTML shell: 5d cache. Must stay below the server-side
   // retired-asset retention (scripts/server/deploy.sh attic, ~7d).
   if (
     path === "/" ||
-    path === "/zp-loader.js" ||
     path.endsWith(".html") ||
     path.endsWith("versions.json") ||
     path.endsWith("/meta.json")
