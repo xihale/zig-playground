@@ -1,0 +1,127 @@
+#!/usr/bin/env bash
+# Server-side deploy job for zp.xihale.top — started by scripts/server/webhook.mjs
+# (or manually: ssh zzy_hk, then `sudo -u zig-ci bash ~/zig-playground/scripts/server/deploy.sh`).
+#
+# Mirrors the retired .github/workflows/deploy.yml:
+#   1. shallow-fetch the pushed branch into the persistent clone
+#   2. fill public/compilers/<id>/ from the public `compilers` release
+#      (incremental: ids with meta.json are never re-downloaded;
+#      falls back to a source build via build-compilers.mjs if an id
+#      is missing from the release — hostZig lives in ~/.local/share/zvm)
+#   3. npm ci + vite build + assemble dist
+#   4. pre-gzip wasm, rsync to /srv/zig-playground (Caddy serves it)
+set -Eeuo pipefail
+umask 022
+
+REF="${1:-refs/heads/master}"
+BRANCH="${REF#refs/heads/}"
+REPO=/home/zig-ci/zig-playground
+DEST=/srv/zig-playground
+LOCK=/home/zig-ci/.deploy.lock
+RERUN=/home/zig-ci/.deploy-rerun
+RELEASE_TAG="${COMPILERS_RELEASE:-compilers}"
+REPO_URL="https://github.com/xihale/zig-playground"
+
+say() { printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"; }
+die() { say "FATAL: $*"; exit 1; }
+
+cd "$REPO"
+
+# One deploy at a time; a push that lands mid-deploy queues exactly one rerun
+# (latest commit wins — the queued rerun fetches the newest sha anyway).
+exec 9>"$LOCK"
+if ! flock -n 9; then
+  touch "$RERUN"
+  say "deploy already running — queued one rerun"
+  exit 0
+fi
+
+say "=== deploy start (${BRANCH}, sha=${ZP_PUSH_SHA:-unknown}) ==="
+
+git fetch --depth=1 origin "$BRANCH"
+git checkout -q -B "$BRANCH" FETCH_HEAD
+# untracked caches (public/compilers, node_modules, .zig-version-cache) survive on purpose
+
+# --- compilers: incremental fill from the public release -------------------
+mkdir -p public/compilers .zig-version-cache
+mapfile -t IDS < <(node --input-type=module -e '
+  import { loadVersionsManifest } from "./scripts/versions-lib.mjs";
+  process.stdout.write(loadVersionsManifest().versions.map(v => v.id).join("\n"));
+')
+missing=()
+for id in "${IDS[@]}"; do
+  if [ -f "public/compilers/$id/meta.json" ]; then
+    say "compilers/$id: cached"
+    continue
+  fi
+  if curl -fsSL --retry 2 -o ".zig-version-cache/$id.tar.gz" \
+      "$REPO_URL/releases/download/$RELEASE_TAG/$id.tar.gz"; then
+    mkdir -p "public/compilers/$id"
+    tar -xzf ".zig-version-cache/$id.tar.gz" -C "public/compilers/$id"
+    say "compilers/$id: fetched from release $RELEASE_TAG"
+  else
+    missing+=("$id")
+  fi
+done
+
+# --- fallback: build missing ids from source (as deploy.yml did) -----------
+if [ "${#missing[@]}" -gt 0 ]; then
+  say "not in release: ${missing[*]} — rebuilding from source"
+  # binaryen/jq/xz are preinstalled system-wide on the host.
+  mapfile -t HOSTS < <(node --input-type=module -e '
+    import { loadVersionsManifest } from "./scripts/versions-lib.mjs";
+    const hosts = [...new Set(loadVersionsManifest().versions.map(v => v.hostZig).filter(Boolean))];
+    process.stdout.write(hosts.join("\n"));
+  ')
+  mkdir -p "$HOME/.local/share/zvm"
+  index=$(mktemp)
+  curl -fsSL https://ziglang.org/download/index.json > "$index"
+  for host in "${HOSTS[@]}"; do
+    dest="$HOME/.local/share/zvm/$host"
+    [ -x "$dest/zig" ] && continue
+    if [ "$host" = "master" ]; then
+      url=$(jq -r '.master["x86_64-linux"].tarball' "$index")
+    else
+      url=$(jq -r --arg v "$host" '.[$v]["x86_64-linux"].tarball // empty' "$index")
+    fi
+    if [ -z "$url" ] || [ "$url" = "null" ]; then
+      die "no x86_64-linux tarball for hostZig=$host"
+    fi
+    tmp=$(mktemp -d)
+    curl -fsSL "$url" | tar -xJ -C "$tmp"
+    inner=$(find "$tmp" -maxdepth 1 -type d -name 'zig-*' | head -1)
+    mkdir -p "$dest"
+    cp -a "$inner"/. "$dest"/
+    "$dest/zig" version
+  done
+  node scripts/build-compilers.mjs --select all --skip-existing
+fi
+
+node --input-type=module -e '
+  import { loadVersionsManifest } from "./scripts/versions-lib.mjs";
+  import { existsSync } from "node:fs";
+  const m = loadVersionsManifest();
+  const miss = m.versions.filter(v => !existsSync(`public/compilers/${v.id}/meta.json`));
+  if (miss.length) { console.error("missing compiler packages:", miss.map(v => v.id).join(" ")); process.exit(1); }
+  if (!existsSync(`public/compilers/${m.default}/meta.json`)) { console.error("default compiler missing:", m.default); process.exit(1); }
+'
+
+# --- frontend build + publish ----------------------------------------------
+npm ci
+npm run build
+find dist -name "*.wasm" -exec gzip -k9 {} +
+
+printf '{"sha":"%s","branch":"%s","deployedAt":"%s"}\n' \
+  "$(git rev-parse HEAD)" "$BRANCH" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > dist/deploy-meta.json
+
+rsync -a --delete --delay-updates \
+  --chmod=Du=rwx,Dgo=rx,Fu=rw,Fgo=r \
+  dist/ "$DEST/"
+say "published $(git rev-parse --short HEAD) → $DEST"
+
+say "=== deploy done ==="
+if [ -e "$RERUN" ]; then
+  rm -f "$RERUN"
+  say "a newer push arrived during this deploy — running again"
+  exec /bin/bash "$0" "$REF"
+fi
