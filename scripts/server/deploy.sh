@@ -9,7 +9,8 @@
 #      falls back to a source build via build-compilers.mjs if an id
 #      is missing from the release — hostZig lives in ~/.local/share/zvm)
 #   3. npm ci + vite build + assemble dist
-#   4. pre-gzip wasm, rsync to /srv/zig-playground (Caddy serves it)
+#   4. pre-gzip wasm, rsync to /srv/zig-playground (Caddy serves it);
+#      hashed /assets/ retire into ~/zp-attic for ~7d (outlives shell TTL)
 set -Eeuo pipefail
 umask 022
 
