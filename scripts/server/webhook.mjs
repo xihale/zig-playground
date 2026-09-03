@@ -9,7 +9,7 @@
  * process exists for seconds unless a deploy is actually running.
  *
  * Server layout (see scripts/server/README.md):
- *   clone:  /home/zig-ci/zig-playground
+ *   clone:  /home/zig-ci/zig-playground   (on gx VPS)
  *   secret: /home/zig-ci/.webhook-secret   (shared with the GitHub hook)
  *   log:    /home/zig-ci/deploy.log        (deploy.sh output)
  *   ntfy:   /home/zig-ci/.ntfy-notify      (topic + user:pass for webhook-deploy)

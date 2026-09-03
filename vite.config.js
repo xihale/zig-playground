@@ -10,7 +10,7 @@ const SHORT_MAX_AGE = 5 * 24 * 60 * 60; // 5d — manifests: versions.json, meta
 
 /**
  * Cache-Control for `vite preview`; production is the Caddy site block on
- * zzy_hk (zp.xihale.top), which mirrors these tiers and adds ACAO *:
+ * gx (zp.xihale.top), which mirrors these tiers and adds ACAO *:
  *   zp-loader.js      -> no-cache (fixed-name remote code, byte-pinned by
  *                        consumers via loaderSha256; must revalidate so a
  *                        re-pin never races a stale browser cache)
@@ -51,7 +51,7 @@ function cacheControlForPath(path) {
   return null;
 }
 
-// Note: production headers live in the Caddy site block on zzy_hk; these
+// Note: production headers live in the Caddy site block on gx; these
 // apply to `vite preview`. Client-side longevity for compilers is handled by
 // src/compiler-cache.ts (Cache Storage).
 export default defineConfig({

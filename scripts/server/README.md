@@ -1,4 +1,4 @@
-# Server-side deploy (zp.xihale.top)
+# Server-side deploy (zp.xihale.top, on gx)
 
 Deploy without a GitHub Actions runner: GitHub sends a **push webhook** to
 `https://zp.xihale.top/hooks/zp-deploy`; Caddy proxies that path to a systemd
@@ -6,7 +6,10 @@ Deploy without a GitHub Actions runner: GitHub sends a **push webhook** to
 HMAC-SHA256 signature and runs `deploy.sh`. Nothing runs while idle — a
 receiver process exists only for the seconds a request (or deploy) takes.
 
-## Pieces (all on zzy_hk)
+> 2026-09-03: migrated from the retired zzy_hk VPS to **gx** (1.14.133.242,
+> Debian 13). Paths/usernames unchanged; only the host and its Caddy moved.
+
+## Pieces (all on gx)
 
 | what | where |
 | --- | --- |
@@ -55,7 +58,7 @@ Type=oneshot
 StandardInput=socket
 StandardOutput=socket
 StandardError=journal
-ExecStart=/usr/local/bin/node /home/zig-ci/zig-playground/scripts/server/webhook.mjs
+ExecStart=/usr/bin/node /home/zig-ci/zig-playground/scripts/server/webhook.mjs
 Environment=HOME=/home/zig-ci
 TimeoutStartSec=45min
 # Be a good neighbor on a shared box
@@ -72,24 +75,39 @@ Enable once (root): `systemctl daemon-reload && systemctl enable --now zig-deplo
 
 ## Caddy
 
-Inside the `zp.xihale.top` site block (matcher next to `@short`, proxy first in
-`route`):
+`zp.xihale.top` site block in `/etc/caddy/Caddyfile` on gx (matcher next to
+`@short`, proxy first in `route`; mirrors the cache tiers in `vite.config.js`):
 
 ```caddyfile
+zp.xihale.top {
+	root * /srv/zig-playground
+	encode zstd gzip
 	@deployhook {
 		path /hooks/zp-deploy
 		method POST
 	}
 	route {
 		reverse_proxy @deployhook unix//run/zig-deploy.sock
-		…existing directives…
+		try_files {path} {path}/ /index.html
+		file_server
 	}
+	@loader path /zp-loader.js
+	header @loader Cache-Control "no-cache"
+	@hashed path /assets/* /compilers/*
+	header @hashed Cache-Control "public, max-age=31536000, immutable"
+	header / Cache-Control "public, max-age=432000"
+	header /versions.json Cache-Control "public, max-age=432000"
+	header /compilers/*/meta.json Cache-Control "public, max-age=432000"
+}
 ```
+
+(`432000` = 5d shell/manifest TTL; must stay below deploy.sh's attic retention,
+currently ~7d.)
 
 ## GitHub webhook (one-time)
 
 ```sh
-SECRET=$(ssh zzy_hk 'cat /home/zig-ci/.webhook-secret')
+SECRET=$(ssh gx 'cat /home/zig-ci/.webhook-secret')
 gh api -X POST repos/xihale/zig-playground/hooks \
   -f url='https://zp.xihale.top/hooks/zp-deploy' \
   -f content_type='json' -f secret="$SECRET" -f 'events[]=push' -F active=true
@@ -98,7 +116,7 @@ gh api -X POST repos/xihale/zig-playground/hooks \
 ## Ops
 
 ```sh
-ssh zzy_hk
+ssh gx
 tail -f /home/zig-ci/deploy.log                  # deploy output
 journalctl -t zig-deploy@ -e                     # receiver lifecycle (start/exit)
 curl -s https://zp.xihale.top/deploy-meta.json   # what sha is live (5d cache)

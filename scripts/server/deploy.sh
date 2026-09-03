@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Server-side deploy job for zp.xihale.top — started by scripts/server/webhook.mjs
-# (or manually: ssh zzy_hk, then `sudo -u zig-ci bash ~/zig-playground/scripts/server/deploy.sh`).
+# (or manually: ssh gx, then `sudo -u zig-ci bash ~/zig-playground/scripts/server/deploy.sh`).
 #
 # Mirrors the retired .github/workflows/deploy.yml:
 #   1. shallow-fetch the pushed branch into the persistent clone
@@ -16,7 +16,7 @@ umask 022
 
 REF="${1:-refs/heads/master}"
 BRANCH="${REF#refs/heads/}"
-REPO=/home/zig-ci/zig-playground
+REPO=/home/zig-ci/zig-playground   # on the gx VPS (1.14.133.242)
 DEST=/srv/zig-playground
 LOCK=/home/zig-ci/.deploy.lock
 RERUN=/home/zig-ci/.deploy-rerun
