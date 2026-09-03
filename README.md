@@ -154,6 +154,7 @@ done
 
 Optional vars: `COMPILERS_RELEASE`, `VITE_BASE` (default `/` for zp.xihale.top).
 
-Custom domain: `public/CNAME` → `zp.xihale.top` (copied into Pages dist).
+Hosting: push webhook → socket-activated receiver on the gx VPS → `deploy.sh`
+(see `scripts/server/README.md`).
 
 Enjoy!
