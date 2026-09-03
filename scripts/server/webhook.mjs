@@ -29,7 +29,7 @@ import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PROJECT = "zig-playground";
-const SERVER = "zzy_hk";
+const SERVER = "gx";
 const SECRET_FILE = process.env.ZP_WEBHOOK_SECRET_FILE ?? "/home/zig-ci/.webhook-secret";
 const DEPLOY_SH = join(HERE, "deploy.sh");
 const DEPLOY_LOG = process.env.ZP_DEPLOY_LOG ?? "/home/zig-ci/deploy.log";
