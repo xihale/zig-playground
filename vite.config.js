@@ -1,7 +1,7 @@
 import { defineConfig } from "vite";
 import { resolve } from "node:path";
 
-// Site root (default). Custom domain: zp.xihale.top
+// Site root (default). Custom domain: zp.xeed.ink
 // Subpath deploys only: set VITE_BASE=/your-prefix/ in CI.
 const base = process.env.VITE_BASE || "/";
 
@@ -10,7 +10,7 @@ const SHORT_MAX_AGE = 5 * 24 * 60 * 60; // 5d — manifests: versions.json, meta
 
 /**
  * Cache-Control for `vite preview`; production is the Caddy site block on
- * gx (zp.xihale.top), which mirrors these tiers and adds ACAO *:
+ * gx (zp.xeed.ink), which mirrors these tiers and adds ACAO *:
  *   zp-loader.js      -> no-cache (fixed-name remote code, byte-pinned by
  *                        consumers via loaderSha256; must revalidate so a
  *                        re-pin never races a stale browser cache)

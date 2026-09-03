@@ -1,7 +1,7 @@
-# Server-side deploy (zp.xihale.top, on gx)
+# Server-side deploy (zp.xeed.ink, on gx)
 
 Deploy without a GitHub Actions runner: GitHub sends a **push webhook** to
-`https://zp.xihale.top/hooks/zp-deploy`; Caddy proxies that path to a systemd
+`https://zp.xeed.ink/hooks/zp-deploy`; Caddy proxies that path to a systemd
 **socket-activated** receiver (`webhook.mjs`) that verifies the GitHub
 HMAC-SHA256 signature and runs `deploy.sh`. Nothing runs while idle — a
 receiver process exists only for the seconds a request (or deploy) takes.
@@ -75,11 +75,11 @@ Enable once (root): `systemctl daemon-reload && systemctl enable --now zig-deplo
 
 ## Caddy
 
-`zp.xihale.top` site block in `/etc/caddy/Caddyfile` on gx (matcher next to
+`zp.xeed.ink` site block in `/etc/caddy/Caddyfile` on gx (matcher next to
 `@short`, proxy first in `route`; mirrors the cache tiers in `vite.config.js`):
 
 ```caddyfile
-zp.xihale.top {
+zp.xeed.ink {
 	root * /srv/zig-playground
 	encode zstd gzip
 	@deployhook {
@@ -109,7 +109,7 @@ currently ~7d.)
 ```sh
 SECRET=$(ssh gx 'cat /home/zig-ci/.webhook-secret')
 gh api -X POST repos/xihale/zig-playground/hooks \
-  -f url='https://zp.xihale.top/hooks/zp-deploy' \
+  -f url='https://zp.xeed.ink/hooks/zp-deploy' \
   -f content_type='json' -f secret="$SECRET" -f 'events[]=push' -F active=true
 ```
 
@@ -119,7 +119,7 @@ gh api -X POST repos/xihale/zig-playground/hooks \
 ssh gx
 tail -f /home/zig-ci/deploy.log                  # deploy output
 journalctl -t zig-deploy@ -e                     # receiver lifecycle (start/exit)
-curl -s https://zp.xihale.top/deploy-meta.json   # what sha is live (5d cache)
+curl -s https://zp.xeed.ink/deploy-meta.json   # what sha is live (5d cache)
 # manual deploy:
 sudo -u zig-ci bash /home/zig-ci/zig-playground/scripts/server/deploy.sh
 ```

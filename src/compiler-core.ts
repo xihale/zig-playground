@@ -19,7 +19,7 @@ export type CompilerMeta = {
 
 /**
  * Origin for compiler assets. Either an absolute origin like
- * `"https://zp.xihale.top"` (cross-site consumer / the loader's self-origin) or
+ * `"https://zp.xeed.ink"` (cross-site consumer / the loader's self-origin) or
  * a site-relative base like `"/"` (the app). Trailing slash optional.
  */
 export type CompilerOrigin = string;

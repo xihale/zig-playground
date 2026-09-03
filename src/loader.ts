@@ -9,7 +9,7 @@
  *     compileCompilerWasm,
  *     getZigLibDir,
  *     listVersions,
- *   } from "https://zp.xihale.top/zp-loader.js";
+ *   } from "https://zp.xeed.ink/zp-loader.js";
  *
  * Logical names (always pass these — the loader resolves content-hash filenames
  * from each version's meta.json):
@@ -50,8 +50,8 @@ export type LoaderVersions = {
  * Origin serving `/compilers/<id>/…` and `/versions.json`.
  *
  * Defaults to this module's own origin, so when served from
- * `https://zp.xihale.top/zp-loader.js` it self-resolves to
- * `https://zp.xihale.top/compilers/<id>/…`. Override with `configure()`.
+ * `https://zp.xeed.ink/zp-loader.js` it self-resolves to
+ * `https://zp.xeed.ink/compilers/<id>/…`. Override with `configure()`.
  */
 let configuredOrigin: CompilerOrigin = (() => {
   try {

@@ -4,7 +4,7 @@ Run and explore Zig in your browser, with compiler and LSP support built in.
 
 ## Multi-version compilers
 
-**Site:** https://zp.xihale.top/
+**Site:** https://zp.xeed.ink/
 
 | Path | Meaning |
 |------|---------|
@@ -30,7 +30,7 @@ Design: [`docs/superpowers/specs/2026-07-26-multi-version-compilers-design.md`](
 
 ## Consume the compilers from another site
 
-This site also ships a small ESM **loader** — `https://zp.xihale.top/zp-loader.js` —
+This site also ships a small ESM **loader** — `https://zp.xeed.ink/zp-loader.js` —
 so other projects can fetch these compilers without re-implementing the
 hash-filename / `meta.json` / Cache-Storage logic. Import it directly (works in
 Web Workers):
@@ -41,7 +41,7 @@ import {
   compileCompilerWasm,
   getZigLibDir,
   listVersions,
-} from "https://zp.xihale.top/zp-loader.js";
+} from "https://zp.xeed.ink/zp-loader.js";
 ```
 
 Always pass **logical** names — the loader resolves the content-hash filename
@@ -77,7 +77,7 @@ const crt = await fetchCompilerFile("0.16.0", "libcompiler_rt.a");
   visible without a cache-bust.
 - **Self-hosting:** call `configure({ origin: "https://your.host" })` once before
   any other call to point at your own `/compilers/<id>/…` tree. The default
-  origin is the loader's own host (`zp.xihale.top`).
+  origin is the loader's own host (`zp.xeed.ink`).
 
 ### How builds are chosen
 
@@ -152,7 +152,7 @@ done
 # after that, normal commits only redeploy the UI
 ```
 
-Optional vars: `COMPILERS_RELEASE`, `VITE_BASE` (default `/` for zp.xihale.top).
+Optional vars: `COMPILERS_RELEASE`, `VITE_BASE` (default `/` for zp.xeed.ink).
 
 Hosting: push webhook → socket-activated receiver on the gx VPS → `deploy.sh`
 (see `scripts/server/README.md`).

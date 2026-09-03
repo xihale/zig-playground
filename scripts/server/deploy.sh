@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Server-side deploy job for zp.xihale.top — started by scripts/server/webhook.mjs
+# Server-side deploy job for zp.xeed.ink — started by scripts/server/webhook.mjs
 # (or manually: ssh gx, then `sudo -u zig-ci bash ~/zig-playground/scripts/server/deploy.sh`).
 #
 # Mirrors the retired .github/workflows/deploy.yml:
