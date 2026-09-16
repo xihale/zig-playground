@@ -93,6 +93,8 @@ zp.xeed.ink {
 	}
 	@loader path /zp-loader.js
 	header @loader Cache-Control "no-cache"
+	@nothook not path /hooks/*
+	header @nothook Access-Control-Allow-Origin "*"
 	@hashed path /assets/* /compilers/*
 	header @hashed Cache-Control "public, max-age=31536000, immutable"
 	header / Cache-Control "public, max-age=432000"
@@ -103,6 +105,13 @@ zp.xeed.ink {
 
 (`432000` = 5d shell/manifest TTL; must stay below deploy.sh's attic retention,
 currently ~7d.)
+
+CORS: everything except the hook answers `Access-Control-Allow-Origin: *` —
+cross-origin consumers (zlg.xeed.ink, any *.xeed.ink site) fetch `zp-loader.js`
+and the compilers. The value is the static `*`, never a per-request Origin
+echo: responses are CDN/proxy-cached without `Vary: Origin` keying, so echoed
+origins would cross-contaminate between sites. All consumer requests are simple
+GETs, so no preflight/OPTIONS handling is needed.
 
 ## GitHub webhook (one-time)
 
