@@ -2,14 +2,10 @@
  * Run WABT's wasm-decompile (C-like pseudo-code) in a one-shot classic Worker.
  *
  * wabt.js only exposes wasm2wat. Decompile ships as a Node-oriented Emscripten
- * CLI under wabt/bin (NODERAWFS). We fetch that script, strip the Node-only FS
- * overlay, and run it against MEMFS in a Worker so the playground stays fully
- * client-side.
+ * CLI under wabt/bin (NODERAWFS). Vite inlines that script as a lazy
+ * same-origin chunk (`?raw`); we strip the Node-only FS overlay and run it
+ * against MEMFS in a Worker so the playground stays fully client-side.
  */
-
-// Vite emits a same-origin URL for the emscripten script (embedded wasm binary).
-// @ts-expect-error Vite ?url query
-import decompileScriptUrl from "wabt/bin/wasm-decompile?url";
 
 import { prettyDecompile } from "./ir-pretty";
 
@@ -44,12 +40,8 @@ function patchDecompileSource(src: string): string {
 
 function loadPatchedDecompileScript(): Promise<string> {
   if (!patchedScriptUrlPromise) {
-    const abs = new URL(decompileScriptUrl, window.location.href).href;
-    patchedScriptUrlPromise = fetch(abs)
-      .then((r) => {
-        if (!r.ok) throw new Error(`failed to fetch wasm-decompile (${r.status})`);
-        return r.text();
-      })
+    patchedScriptUrlPromise = import("wabt/bin/wasm-decompile?raw")
+      .then((m) => m.default as string)
       .then((text) => {
         const patched = patchDecompileSource(text);
         const blob = new Blob([patched], { type: "application/javascript" });
