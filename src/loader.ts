@@ -52,9 +52,16 @@ export type LoaderVersions = {
  * Defaults to this module's own origin, so when served from
  * `https://zp.xeed.ink/zp-loader.js` it self-resolves to
  * `https://zp.xeed.ink/compilers/<id>/…`. Override with `configure()`.
+ *
+ * Blob imports (e.g. an integrity-pinning consumer importing the fetched
+ * bytes via URL.createObjectURL) lose the home origin: import.meta.url is a
+ * blob: URL whose origin is the *consumer's*. Defaulting silently there made
+ * consumers fetch — and cache — their own SPA fallback as compiler assets, so
+ * refuse to guess and demand an explicit configure() instead.
  */
-let configuredOrigin: CompilerOrigin = (() => {
+let configuredOrigin: CompilerOrigin | null = (() => {
   try {
+    if (import.meta.url.startsWith("blob:")) return null;
     return new URL(import.meta.url).origin;
   } catch {
     return "/";
@@ -68,8 +75,21 @@ export function configure(opts: LoaderOptions): void {
   if (opts.origin != null) configuredOrigin = opts.origin;
 }
 
-/** Current asset origin (the loader's own origin unless reconfigured). */
-export function origin(): CompilerOrigin {
+/**
+ * Current asset origin — null when the loader was blob-imported without an
+ * explicit `configure()`; every asset accessor throws until that is fixed.
+ */
+export function origin(): CompilerOrigin | null {
+  return configuredOrigin;
+}
+
+function requireOrigin(): CompilerOrigin {
+  if (configuredOrigin == null) {
+    throw new Error(
+      "zp-loader was blob-imported, so its home origin is unknown; " +
+        'call configure({ origin: "https://…" }) before any asset call',
+    );
+  }
   return configuredOrigin;
 }
 
@@ -78,7 +98,7 @@ export async function fetchCompilerFile(
   versionId: string,
   logicalName: string,
 ): Promise<ArrayBuffer> {
-  return fetchCompilerFileFor(configuredOrigin, versionId, logicalName);
+  return fetchCompilerFileFor(requireOrigin(), versionId, logicalName);
 }
 
 /** Compile a logical `.wasm` compiler asset (hash resolved from meta.json). */
@@ -86,7 +106,7 @@ export async function compileCompilerWasm(
   versionId: string,
   logicalName: string,
 ): Promise<WebAssembly.Module> {
-  return compileCompilerWasmFor(configuredOrigin, versionId, logicalName);
+  return compileCompilerWasmFor(requireOrigin(), versionId, logicalName);
 }
 
 /**
@@ -94,12 +114,12 @@ export async function compileCompilerWasm(
  * Re-untars each call; consumers usually cache the result per version id.
  */
 export async function getZigLibDir(versionId: string) {
-  return getZigArchiveFor(configuredOrigin, versionId);
+  return getZigArchiveFor(requireOrigin(), versionId);
 }
 
 /** Fetch (once per id per session) the logical→physical file map for a version. */
 export async function metaJson(versionId: string): Promise<CompilerMeta | null> {
-  return coreMeta(configuredOrigin, versionId);
+  return coreMeta(requireOrigin(), versionId);
 }
 
 /**
@@ -107,11 +127,12 @@ export async function metaJson(versionId: string): Promise<CompilerMeta | null> 
  * Build internals (git refs, patches) are stripped from the return type.
  */
 export async function listVersions(): Promise<LoaderVersions> {
-  const root = configuredOrigin.includes("://")
-    ? `${new URL(configuredOrigin).origin}/`
-    : configuredOrigin.endsWith("/")
-      ? configuredOrigin
-      : `${configuredOrigin}/`;
+  const configured = requireOrigin();
+  const root = configured.includes("://")
+    ? `${new URL(configured).origin}/`
+    : configured.endsWith("/")
+      ? configured
+      : `${configured}/`;
   const res = await fetch(`${root}versions.json`, { cache: "no-store" });
   if (!res.ok) throw new Error(`fetch versions.json: HTTP ${res.status}`);
   const data = (await res.json()) as {
