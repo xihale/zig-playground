@@ -1,0 +1,121 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow only one concurrent deployment, skipping runs queued between the run in-progress and latest queued.
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Setup Pages configuration
+        id: pages
+        uses: actions/configure-pages@v5
+
+      - name: Determine Vite base path
+        run: |
+          set -euo pipefail
+          if [ -n "${{ vars.VITE_BASE }}" ]; then
+            BASE="${{ vars.VITE_BASE }}"
+          elif [ -n "${{ steps.pages.outputs.base_path }}" ]; then
+            BASE="${{ steps.pages.outputs.base_path }}/"
+          else
+            BASE="/"
+          fi
+          echo "VITE_BASE=$BASE" >> "$GITHUB_ENV"
+          echo "Using VITE_BASE=$BASE"
+
+      - name: Download wasm compilers from current repository Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ vars.COMPILERS_RELEASE || 'compilers' }}
+        run: |
+          set -euo pipefail
+          mkdir -p public/compilers .zig-version-cache/release-download
+
+          if gh release download "$TAG" --repo "$REPO" \
+              --dir .zig-version-cache/release-download --clobber \
+              --pattern '*.tar.gz' 2>/dev/null; then
+            shopt -s nullglob
+            for f in .zig-version-cache/release-download/*.tar.gz; do
+              id=$(basename "$f" .tar.gz)
+              mkdir -p "public/compilers/$id"
+              tar -xzf "$f" -C "public/compilers/$id"
+              echo "Extracted $id.tar.gz from $REPO release $TAG"
+            done
+            shopt -u nullglob
+          else
+            echo "Release '$TAG' not found in repository '$REPO'."
+          fi
+
+      - name: Ensure wasm compilers exist (fail fast if missing)
+        run: |
+          set -euo pipefail
+          MISSING=$(node --input-type=module -e '
+            import { loadVersionsManifest } from "./scripts/versions-lib.mjs";
+            import { existsSync } from "node:fs";
+            import { join } from "node:path";
+            const m = loadVersionsManifest();
+            const miss = m.versions.filter(v => !existsSync(join("public/compilers", v.id, "meta.json")));
+            process.stdout.write(miss.map(v => v.id).join(" "));
+          ')
+
+          if [ -n "${MISSING// }" ]; then
+            echo "::error::Missing compiler wasm assets for version(s): $MISSING"
+            echo "::error::No prebuilt wasm compilers found in repository Release."
+            echo "::error::Please run the 'Build Compilers' workflow (.github/workflows/build-compilers.yml) first to build and release the wasm assets."
+            exit 1
+          fi
+
+          DEFAULT=$(node -p "require('./versions.json').default")
+          if [ ! -f "public/compilers/${DEFAULT}/meta.json" ]; then
+            echo "::error::Default compiler '${DEFAULT}' meta.json is missing!"
+            exit 1
+          fi
+
+          echo "All compiler wasm assets verified:"
+          ls -la public/compilers
+
+      - name: Build frontend & assemble multi-version dist
+        run: |
+          npm run build
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist/
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

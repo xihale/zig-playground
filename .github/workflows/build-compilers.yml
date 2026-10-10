@@ -1,0 +1,153 @@
+name: Build Compilers
+
+on:
+  workflow_dispatch:
+    inputs:
+      select:
+        description: "Version selection strategy"
+        type: choice
+        options:
+          - all
+          - stable
+          - scheduled
+        default: all
+      only:
+        description: "Build only a specific version id (e.g. 0.16.0, leave empty for all)"
+        type: string
+        default: ""
+      publish_release:
+        description: "Publish built compiler archives to GitHub Release"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+jobs:
+  build-compilers:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install build toolchain (binaryen, jq, xz-utils)
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y binaryen jq xz-utils
+
+      - name: Install host Zig versions
+        run: |
+          set -euo pipefail
+          # Collect all unique hostZig versions needed
+          mapfile -t HOSTS < <(node --input-type=module -e '
+            import { loadVersionsManifest } from "./scripts/versions-lib.mjs";
+            const m = loadVersionsManifest();
+            const hosts = [...new Set(m.versions.map(v => v.hostZig).filter(Boolean))];
+            process.stdout.write(hosts.join("\n"));
+          ')
+          echo "hostZig versions to install: ${HOSTS[*]:-(none)}"
+
+          mkdir -p "$HOME/.local/share/zvm"
+          INDEX=$(mktemp)
+          curl -fsSL https://ziglang.org/download/index.json > "$INDEX"
+
+          for HOST in "${HOSTS[@]}"; do
+            [ -z "$HOST" ] && continue
+            DEST="$HOME/.local/share/zvm/$HOST"
+            if [ -x "$DEST/zig" ]; then
+              echo "hostZig $HOST already at $DEST"
+              continue
+            fi
+            echo "Installing hostZig=$HOST..."
+            if [ "$HOST" = "master" ]; then
+              URL=$(jq -r '.master["x86_64-linux"].tarball' "$INDEX")
+            else
+              URL=$(jq -r --arg v "$HOST" '.[$v]["x86_64-linux"].tarball // empty' "$INDEX")
+            fi
+            if [ -z "$URL" ] || [ "$URL" = "null" ]; then
+              echo "::error::No x86_64-linux tarball found for hostZig=$HOST"
+              exit 1
+            fi
+            TMP=$(mktemp -d)
+            curl -fsSL "$URL" | tar -xJ -C "$TMP"
+            INNER=$(find "$TMP" -maxdepth 1 -type d -name 'zig-*' | head -1)
+            mkdir -p "$DEST"
+            cp -a "$INNER"/. "$DEST"/
+            "$DEST/zig" version
+          done
+
+      - name: Build compilers from source
+        run: |
+          set -euo pipefail
+          ARGS=("--select" "${{ inputs.select }}")
+          if [ -n "${{ inputs.only }}" ]; then
+            ARGS+=("--only" "${{ inputs.only }}")
+          fi
+          echo "Running build-compilers.mjs ${ARGS[*]}"
+          node scripts/build-compilers.mjs "${ARGS[@]}"
+
+      - name: Verify build outputs
+        run: |
+          set -euo pipefail
+          echo "Packaged compiler outputs:"
+          ls -la public/compilers
+          shopt -s nullglob
+          for meta in public/compilers/*/meta.json; do
+            id=$(basename "$(dirname "$meta")")
+            echo "Found valid compiler: $id"
+          done
+
+      - name: Publish to GitHub Release
+        if: inputs.publish_release == true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ vars.COMPILERS_RELEASE || 'compilers' }}
+        run: |
+          set -euo pipefail
+
+          # Archive each built compiler version into <id>.tar.gz
+          shopt -s nullglob
+          count=0
+          for dir in public/compilers/*; do
+            [ -d "$dir" ] || continue
+            id=$(basename "$dir")
+            if [ -f "$dir/meta.json" ]; then
+              echo "Archiving $id..."
+              tar -C "$dir" -czf "$id.tar.gz" .
+              count=$((count + 1))
+            fi
+          done
+
+          if [ "$count" -eq 0 ]; then
+            echo "No compilers built to upload."
+            exit 0
+          fi
+
+          # Ensure the release exists in current repository
+          if ! gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
+            echo "Release $TAG does not exist. Creating release in $REPO..."
+            gh release create "$TAG" \
+              --repo "$REPO" \
+              --title "Compiler assets (not in git)" \
+              --notes "Prebuilt per-version zig/zls wasm trees for Pages deploy."
+          fi
+
+          # Upload archives to release
+          for f in *.tar.gz; do
+            [ -f "$f" ] || continue
+            echo "Uploading $f to release $TAG in $REPO..."
+            gh release upload "$TAG" "$f" --repo "$REPO" --clobber
+          done
+
+          echo "All compiler archives successfully uploaded to release $TAG."
