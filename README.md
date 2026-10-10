@@ -4,7 +4,7 @@ Run and explore Zig in your browser, with compiler and LSP support built in.
 
 ## Multi-version compilers
 
-**Site:** https://zp.xeed.ink/
+**Site:** https://play.ziglang.cc/
 
 | Path | Meaning |
 |------|---------|
@@ -22,7 +22,7 @@ Shared UI under `/assets/`. Per-version compilers:
 /compilers/<id>/meta.json
 ```
 
-Compiler asset filenames carry a content hash so the CDN (Cloudflare) can cache
+Compiler asset filenames carry a content hash so the CDN can cache
 them immutably; `meta.json` maps logical names → hashed filenames (the one
 fixed-name file). **Large binaries are never committed.**
 
@@ -30,7 +30,7 @@ Design: [`docs/superpowers/specs/2026-07-26-multi-version-compilers-design.md`](
 
 ## Consume the compilers from another site
 
-This site also ships a small ESM **loader** — `https://zp.xeed.ink/zp-loader.js` —
+This site also ships a small ESM **loader** — `https://play.ziglang.cc/zp-loader.js` —
 so other projects can fetch these compilers without re-implementing the
 hash-filename / `meta.json` / Cache-Storage logic. Import it directly (works in
 Web Workers):
@@ -41,7 +41,7 @@ import {
   compileCompilerWasm,
   getZigLibDir,
   listVersions,
-} from "https://zp.xeed.ink/zp-loader.js";
+} from "https://play.ziglang.cc/zp-loader.js";
 ```
 
 Always pass **logical** names — the loader resolves the content-hash filename
@@ -77,7 +77,7 @@ const crt = await fetchCompilerFile("0.16.0", "libcompiler_rt.a");
   visible without a cache-bust.
 - **Self-hosting:** call `configure({ origin: "https://your.host" })` once before
   any other call to point at your own `/compilers/<id>/…` tree. The default
-  origin is the loader's own host (`zp.xeed.ink`).
+  origin is the loader's own host (`https://play.ziglang.cc`).
 
 ### How builds are chosen
 
@@ -131,30 +131,19 @@ npm run build               # vite + assemble-dist
 npm run preview
 ```
 
-## CI
+## CI / Deployment
 
-| Workflow | When compilers are built |
-|----------|---------------------------|
-| **Deploy** (every push) | **Reuses Release.** Downloads per-version `<id>.tar.gz` from `compilers` → only builds frontend. Source rebuild only if an id is missing after download, or **Run workflow → rebuild_compilers**. |
-| **Master compiler** | Builds `schedule` ids with **hostZig=master** from Codeberg (~every 3 days + **manual**). On success, uploads only `master.tar.gz` to the `compilers` Release — stable pins stay untouched. |
+This project deploys exclusively via **GitHub Actions** to **GitHub Pages**:
 
-So: **compile once, upload Release, reuse forever** until you force rebuild or the release is incomplete.
+| Workflow | Role |
+|----------|------|
+| **Deploy to GitHub Pages** (`deploy.yml`) | Runs on every push to `main`. Downloads prebuilt per-version `<id>.tar.gz` from this repository's `compilers` Release, builds the frontend, and publishes to GitHub Pages. **Fails immediately if required wasm compiler assets are missing.** |
+| **Build Compilers** (`build-compilers.yml`) | Manual workflow (`workflow_dispatch`). Compiles selected or all Zig / ZLS WebAssembly compiler targets from source and creates/updates the `compilers` Release on this repository. |
 
-```bash
-# One-time (or when upgrading a pin): produce + publish binaries.
-# Each version id becomes its own <id>.tar.gz on the `compilers` release
-# (archives are flat — files at the root, no top-level dir).
-npm run compilers -- --select all
-for id in $(node -e 'console.log(require("./versions.json").versions.map(v=>v.id).join(" "))'); do
-  tar -C "public/compilers/$id" -czf "$id.tar.gz" .
-  gh release upload compilers "$id.tar.gz" --clobber
-done
-# after that, normal commits only redeploy the UI
-```
+Workflow strategy: **Build compilers once → publish to GitHub Release → Pages deployment reuses release binaries.**
 
-Optional vars: `COMPILERS_RELEASE`, `VITE_BASE` (default `/` for zp.xeed.ink).
-
-Hosting: push webhook → socket-activated receiver on the gx VPS → `deploy.sh`
-(see `scripts/server/README.md`).
+Optional repository variables:
+- `COMPILERS_RELEASE`: Release tag containing compiler archives (defaults to `compilers`).
+- `VITE_BASE`: Base path for Vite assets (automatically configured by `actions/configure-pages`, e.g. `/play/`).
 
 Enjoy!

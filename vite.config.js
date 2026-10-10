@@ -1,7 +1,7 @@
 import { defineConfig } from "vite";
 import { resolve } from "node:path";
 
-// Site root (default). Custom domain: zp.xeed.ink
+// Site root (default). Custom domain: play.ziglang.cc
 // Subpath deploys only: set VITE_BASE=/your-prefix/ in CI.
 const base = process.env.VITE_BASE || "/";
 
@@ -9,25 +9,17 @@ const IMMUTABLE_MAX_AGE = 365 * 24 * 60 * 60; // 1y — content-addressed files 
 const SHORT_MAX_AGE = 5 * 24 * 60 * 60; // 5d — manifests: versions.json, meta.json
 
 /**
- * Cache-Control for `vite preview`; production is the Caddy site block on
- * gx (zp.xeed.ink), which mirrors these tiers and adds ACAO *:
- *   zp-loader.js      -> no-cache (fixed-name remote code, byte-pinned by
- *                        consumers via loaderSha256; must revalidate so a
- *                        re-pin never races a stale browser cache)
- *   shell + manifests -> 5d (retired hashed assets survive in the server-side
- *                        attic ~7d — deploy.sh — so a cached shell never 404s)
+ * Cache-Control headers for preview / production:
+ *   zp-loader.js      -> no-cache (fixed-name remote code; must revalidate)
+ *   shell + manifests -> 5d
  *   hashed            -> immutable (compiler assets, Vite UI chunks)
  */
 function cacheControlForPath(path) {
-  // zp-loader.js: fixed-name SDK consumed cross-site and byte-pinned by
-  // consumers (loaderSha256) — revalidate always, else a consumer's re-pin
-  // fails against a stale browser cache (fail-closed = bricked compiler).
   if (path === "/zp-loader.js") {
     return "no-cache";
   }
 
-  // Manifests and the HTML shell: 5d cache. Must stay below the server-side
-  // retired-asset retention (scripts/server/deploy.sh attic, ~7d).
+  // Manifests and the HTML shell: 5d cache.
   if (
     path === "/" ||
     path.endsWith(".html") ||

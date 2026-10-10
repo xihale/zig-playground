@@ -175,7 +175,7 @@ Adding a release = append to `versions` + wire build deps + run CI. No automatic
 
 - Local: package `0.15.2`, open `/`, `/0.15.2/`, switch dropdown, confirm ZIR keys isolated (second version cold vs warm).
 - `vite preview` with assembled `dist/`.
-- Push to `https://github.com/xihale/zig-playground`; CI green; Pages serves multi-path.
+- Push to `https://github.com/zigcc/play`; CI green; Pages serves multi-path.
 
 ## Implementation order
 
