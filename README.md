@@ -133,12 +133,16 @@ npm run preview
 
 ## CI / Deployment
 
-This project deploys exclusively via **GitHub Actions** to **GitHub Pages**:
+**Live deploys run on the gx VPS webhook (branch `master`)**: a push to `master`
+fires the GitHub webhook → the shared receiver on gx (adnanh/webhook) →
+`scripts/server/deploy.sh` (fetch → compilers from the `compilers` Release →
+npm ci + vite build → rsync to the web root, publish in ~1 min). Setup and
+operations: [`scripts/server/README.md`](scripts/server/README.md).
 
 | Workflow | Role |
 |----------|------|
-| **Deploy to GitHub Pages** (`deploy.yml`) | Runs on every push to `main`. Downloads prebuilt per-version `<id>.tar.gz` from this repository's `compilers` Release, builds the frontend, and publishes to GitHub Pages. **Fails immediately if required wasm compiler assets are missing.** |
 | **Build Compilers** (`build-compilers.yml`) | Manual workflow (`workflow_dispatch`). Compiles selected or all Zig / ZLS WebAssembly compiler targets from source and creates/updates the `compilers` Release on this repository. |
+| **Deploy to GitHub Pages** (`deploy.yml`) | Dormant: it triggers on `main` only (live deploys come from `master` via the gx webhook) and GitHub Pages is not enabled. If adopted later, it reuses the `compilers` Release the same way the gx deploy does. |
 
 Workflow strategy: **Build compilers once → publish to GitHub Release → Pages deployment reuses release binaries.**
 
