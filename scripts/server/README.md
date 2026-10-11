@@ -83,6 +83,9 @@ logic — the only thing the receiver is allowed to run) + this README.
   homes are `0700`, so the `webhook` user cannot chdir into them; the spawn
   then fails silently while GitHub still records a 200 delivery. The runner
   ignores its cwd and every `deploy.sh` cds into its own clone.
+- **Rebuilding hooks.json with `jq > .new && mv` breaks `-hotreload`** (the
+  inotify watch dies with the old inode) — edits apply but replacements need
+  `systemctl restart webhook.service`. Prefer in-place edits, or restart.
 - Upgrading = swapping the binary at `/usr/local/bin/webhook` (currently
   2.8.3; check `webhook -version`).
 
