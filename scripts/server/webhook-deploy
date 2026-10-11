@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# Shared bridge between the generic webhook receiver (adnanh/webhook, user
+# 'webhook') and each site's deploy.sh — replaces the retired per-site
+# webhook.mjs. Installed at /usr/local/lib/webhook-deploy on gx and invoked
+# through the sudoers whitelist as the target site user:
+#
+#   /usr/local/lib/webhook-deploy <deploy.sh> <ref> <project> <sha>
+#
+# Contract (identical across all five sites' old webhook.mjs): deploy.sh
+# takes the ref as $1 and understands ZP_PUSH_SHA; ntfy credentials live in
+# ~/.ntfy-notify (line 1 topic, line 2 user:pass; optional — sched has none).
+# Output appends to ~/deploy.log; the notification is strictly best-effort
+# and must never fail a deploy. Concurrency/queueing is deploy.sh's own
+# flock + rerun logic, unchanged.
+set -u
+DEPLOY_SH=$1 REF=$2 PROJECT=$3 SHA=$4
+SERVER=gx
+NTFY_URL=https://ntfy.xeed.ink
+LOG=$HOME/deploy.log
+NTFY_CONFIG=$HOME/.ntfy-notify
+BRANCH=${REF#refs/heads/}
+case $SHA in ''|*[!0-9a-f]*) SHA=unknown;; esac
+
+say() { printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"; }
+
+export ZP_PUSH_SHA=$SHA
+say "=== webhook delivery: $PROJECT ($BRANCH, sha=$SHA) ==="
+start=$(date +%s)
+if bash "$DEPLOY_SH" "$REF" >>"$LOG" 2>&1; then
+  rc=0; status=success; tags=white_check_mark; prio=default
+  msg="${SHA:0:7} live in $(( $(date +%s) - start ))s"
+else
+  rc=$?; status=failure; tags=rotating_light; prio=high
+  tail=$(tail -c 8192 "$LOG" 2>/dev/null)
+  reason=$(printf '%s\n' "$tail" | grep 'FATAL:' | tail -1)
+  [ -n "$reason" ] || reason=$(printf '%s\n' "$tail" | tail -1)
+  msg="${SHA:0:7} failed (exit $rc): $(printf '%s' "$reason" | cut -c1-200) — ssh $SERVER: tail $LOG"
+fi
+
+# Best-effort ntfy push; a notification outage must never fail a deploy.
+if [ -r "$NTFY_CONFIG" ]; then
+  topic=$(head -1 "$NTFY_CONFIG")
+  auth=$(sed -n '2p' "$NTFY_CONFIG")
+  if ! curl -sS -m 5 -o /dev/null -u "$auth" \
+      -H "Title: [$PROJECT@$SERVER] deploy $status" \
+      -H "Priority: $prio" -H "Tags: $tags" \
+      --data "$msg" "$NTFY_URL/$topic"; then
+    say "ntfy notify failed (ignored)"
+  fi
+fi
+say "webhook-deploy: $PROJECT $status (rc=$rc)"
+exit $rc

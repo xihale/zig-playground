@@ -1,0 +1,14 @@
+[Unit]
+Description=Generic push webhook receiver socket (adnanh/webhook)
+# All five sites' GitHub push hooks arrive here via Caddy
+# (unix//run/webhook.sock). Socket activation keeps the idle footprint at
+# zero processes; webhook >= 2.8.2 detects LISTEN_FDS on its own.
+# Caddy dials the socket, hence the caddy group + 0660.
+[Socket]
+ListenStream=/run/webhook.sock
+SocketUser=webhook
+SocketGroup=caddy
+SocketMode=0660
+
+[Install]
+WantedBy=sockets.target

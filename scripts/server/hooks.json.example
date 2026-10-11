@@ -1,0 +1,75 @@
+// Template for /etc/webhook/hooks.json on gx — the entire per-site
+// "whitelist" of the shared webhook receiver. One entry per site; the real
+// file is assembled on the server (secrets must not leave it):
+//
+//   gen() {  # <user> <project> <deploy.sh> <ref> <hook-id>
+//     local secret=$(cat /home/$1/.webhook-secret)
+//     jq -n --arg id "$5" --arg user "$1" --arg deploy "$3" --arg ref "$4" \
+//        --arg secret "$secret" --arg dir "$(dirname "$3")" '{
+//       id: $id,
+//       "execute-command": "/usr/bin/sudo",
+//       "command-working-directory": $dir,
+//       "http-methods": ["POST"],
+//       "pass-arguments-to-command": [
+//         {"source":"string","name":"-H"},
+//         {"source":"string","name":"-u"},
+//         {"source":"string","name":$user},
+//         {"source":"string","name":"/usr/local/lib/webhook-deploy"},
+//         {"source":"string","name":$deploy},
+//         {"source":"string","name":$ref},
+//         {"source":"string","name":"PROJECT"},
+//         {"source":"payload","name":"after"}
+//       ],
+//       "trigger-rule": {"and": [
+//         {"match": {"type":"payload-hmac-sha256","secret":$secret,
+//                    "parameter":{"source":"header","name":"X-Hub-Signature-256"}}},
+//         {"match": {"type":"value","value":$ref,
+//                    "parameter":{"source":"payload","name":"ref"}}}
+//       ]}
+//     }'
+//   }
+//   jq -s . <(gen zig-ci zig-playground /home/zig-ci/zig-playground/scripts/server/deploy.sh refs/heads/master zp-deploy) \
+//           <(gen blog-ci blog /home/blog-ci/blog/scripts/server/deploy.sh refs/heads/astro blog-deploy) \
+//           ... > /etc/webhook/hooks.json
+//   chown root:webhook /etc/webhook/hooks.json && chmod 640 /etc/webhook/hooks.json
+//
+// Semantics: an entry fires only when the payload is validly HMAC-signed
+// AND ref matches the pinned branch. Everything else — ping, other events,
+// other branches, branch deletions — is answered "hook rules were not
+// satisfied" (200) and never reaches deploy.sh.
+[
+  {
+    "id": "zp-deploy",
+    "execute-command": "/usr/bin/sudo",
+    "command-working-directory": "/home/zig-ci/zig-playground",
+    "http-methods": ["POST"],
+    "pass-arguments-to-command": [
+      {"source": "string", "name": "-H"},
+      {"source": "string", "name": "-u"},
+      {"source": "string", "name": "zig-ci"},
+      {"source": "string", "name": "/usr/local/lib/webhook-deploy"},
+      {"source": "string", "name": "/home/zig-ci/zig-playground/scripts/server/deploy.sh"},
+      {"source": "string", "name": "refs/heads/master"},
+      {"source": "string", "name": "zig-playground"},
+      {"source": "payload", "name": "after"}
+    ],
+    "trigger-rule": {
+      "and": [
+        {
+          "match": {
+            "type": "payload-hmac-sha256",
+            "secret": "SECRET",
+            "parameter": {"source": "header", "name": "X-Hub-Signature-256"}
+          }
+        },
+        {
+          "match": {
+            "type": "value",
+            "value": "refs/heads/master",
+            "parameter": {"source": "payload", "name": "ref"}
+          }
+        }
+      ]
+    }
+  }
+]

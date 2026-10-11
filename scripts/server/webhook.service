@@ -1,0 +1,19 @@
+[Unit]
+Description=Generic push webhook receiver (adnanh/webhook)
+Requires=webhook.socket
+After=webhook.socket
+
+[Service]
+Type=exec
+User=webhook
+Group=webhook
+ExecStart=/usr/local/bin/webhook -nopanic -hooks /etc/webhook/hooks.json -hotreload
+# -hotreload: hooks.json edits take effect without a restart.
+# Hardening stays minimal on purpose: NoNewPrivileges would break the
+# sudo hop into the per-site users, and any tighter sandbox here would
+# have to whitelist everything deploy.sh and its build children touch.
+Restart=on-failure
+RestartSec=2s
+
+[Install]
+WantedBy=multi-user.target
