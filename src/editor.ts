@@ -1037,6 +1037,76 @@ function resetCode() {
 const resetButton = document.getElementById("reset")! as HTMLButtonElement;
 resetButton.addEventListener("click", resetCode);
 
+// ─── Theme switcher (Auto / Dark / Light) ──────────────────────
+const themeToggle = document.getElementById("theme-toggle") as HTMLButtonElement | null;
+const THEME_STORAGE_KEY = "zig-playground-theme";
+
+type ThemeSetting = "auto" | "light" | "dark";
+
+function getStoredTheme(): ThemeSetting {
+  try {
+    const val = localStorage.getItem(THEME_STORAGE_KEY);
+    if (val === "light" || val === "dark") return val;
+  } catch (e) {}
+  return "auto";
+}
+
+function updateThemeUI(setting: ThemeSetting) {
+  const root = document.documentElement;
+  const isSystemDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+
+  if (setting === "auto") {
+    root.removeAttribute("data-theme");
+  } else {
+    root.setAttribute("data-theme", setting);
+  }
+
+  if (themeToggle) {
+    if (setting === "auto") {
+      themeToggle.textContent = isSystemDark ? "Auto (Dark)" : "Auto (Light)";
+      themeToggle.title = "Theme: Following system. Click to switch.";
+    } else if (setting === "light") {
+      themeToggle.textContent = "Light";
+      themeToggle.title = "Theme: Light. Click to switch.";
+    } else {
+      themeToggle.textContent = "Dark";
+      themeToggle.title = "Theme: Dark. Click to switch.";
+    }
+  }
+}
+
+if (themeToggle) {
+  let currentTheme = getStoredTheme();
+  updateThemeUI(currentTheme);
+
+  themeToggle.addEventListener("click", () => {
+    const isSystemDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    if (currentTheme === "auto") {
+      currentTheme = isSystemDark ? "light" : "dark";
+    } else if (currentTheme === "light") {
+      currentTheme = "dark";
+    } else {
+      currentTheme = "auto";
+    }
+
+    try {
+      if (currentTheme === "auto") {
+        localStorage.removeItem(THEME_STORAGE_KEY);
+      } else {
+        localStorage.setItem(THEME_STORAGE_KEY, currentTheme);
+      }
+    } catch (e) {}
+
+    updateThemeUI(currentTheme);
+  });
+
+  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+    if (currentTheme === "auto") {
+      updateThemeUI("auto");
+    }
+  });
+}
+
 // Share menu: copy link (full UI) or iframe snippet (embed UI).
 const shareMenu = document.getElementById("share-menu")!;
 const shareToggle = document.getElementById("share-toggle")! as HTMLButtonElement;

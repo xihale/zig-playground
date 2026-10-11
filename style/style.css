@@ -1,8 +1,8 @@
 @import "zig-theme.css";
 
-/* ─── Theme tokens (dark-only, xAI-inspired per DESIGN.md) ───────
-   One continuous near-black panel. Sections join edge-to-edge;
-   only 1px hairlines separate editor / output / toolbars. */
+/* ─── Theme tokens ──────────────────────────────────────────────
+   Dark (default): near-black panels with refined contrast.
+   Light: clean, high-contrast surfaces for light mode. */
 
 :root {
     /* surfaces */
@@ -20,7 +20,7 @@
     /* accent (sunset, used sparingly) */
     --accent: #ff7a17;
 
-    /* status: restrained yellow / green / red (dark-canvas friendly) */
+    /* status: restrained yellow / green / red */
     --status-idle: #7d8187;
     --status-busy: #a89050;  /* muted yellow — loading / running */
     --status-ok:   #5a8f6e;  /* muted green — exit 0 */
@@ -46,6 +46,13 @@
     --autocomplete-info-bg:     #12141a;
     --autocomplete-detail-text: var(--body-mid);
     --autocomplete-match:       var(--zig-yellow);
+    --autocomplete-detail-selected: hsla(0, 0%, 100%, 0.4);
+
+    /* scrollbar & hover */
+    --scrollbar-thumb: var(--canvas-mid);
+    --scrollbar-thumb-hover: #4a4f55;
+    --menu-hover-bg: rgba(255, 255, 255, 0.06);
+    --color-scheme: dark;
 
     /* ─── Editor system (CodeMirror) ─────────────────────────────── */
     --editor-font-mono: ui-monospace, 'SFMono-Regular', Menlo, Monaco,
@@ -66,6 +73,96 @@
     --editor-size-percent: 73.108%;
 }
 
+@media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+        /* surfaces */
+        --canvas:          #ffffff;
+        --canvas-soft:     #f4f4f5;
+        --canvas-mid:      #e4e4e7;
+        --hairline:        #e4e4e7;
+        --hairline-bright: rgba(0, 0, 0, 0.12);
+
+        /* text */
+        --ink:        #09090b;
+        --body:       #27272a;
+        --body-mid:   #71717a;
+
+        /* accent */
+        --accent: #ea580c;
+
+        /* status */
+        --status-idle: #71717a;
+        --status-busy: #b45309;
+        --status-ok:   #15803d;
+        --status-err:  #b91c1c;
+
+        /* autocomplete */
+        --autocomplete-bg:          #ffffff;
+        --autocomplete-border:      rgba(0, 0, 0, 0.15);
+        --autocomplete-selected-bg: rgba(0, 0, 0, 0.06);
+        --autocomplete-selected-text: var(--ink);
+        --autocomplete-info-bg:     #fafafa;
+        --autocomplete-detail-text: var(--body-mid);
+        --autocomplete-match:       #d97706;
+        --autocomplete-detail-selected: rgba(0, 0, 0, 0.45);
+
+        /* editor */
+        --editor-surface: rgba(0, 0, 0, 0.04);
+        --editor-focus-ring: rgba(0, 0, 0, 0.08);
+        --editor-text-tertiary: var(--body-mid);
+
+        /* scrollbar & hover */
+        --scrollbar-thumb: #d4d4d8;
+        --scrollbar-thumb-hover: #a1a1aa;
+        --menu-hover-bg: rgba(0, 0, 0, 0.05);
+        --color-scheme: light;
+    }
+}
+
+:root[data-theme="light"] {
+    /* surfaces */
+    --canvas:          #ffffff;
+    --canvas-soft:     #f4f4f5;
+    --canvas-mid:      #e4e4e7;
+    --hairline:        #e4e4e7;
+    --hairline-bright: rgba(0, 0, 0, 0.12);
+
+    /* text */
+    --ink:        #09090b;
+    --body:       #27272a;
+    --body-mid:   #71717a;
+
+    /* accent */
+    --accent: #ea580c;
+
+    /* status */
+    --status-idle: #71717a;
+    --status-busy: #b45309;
+    --status-ok:   #15803d;
+    --status-err:  #b91c1c;
+
+    /* autocomplete */
+    --autocomplete-bg:          #ffffff;
+    --autocomplete-border:      rgba(0, 0, 0, 0.15);
+    --autocomplete-selected-bg: rgba(0, 0, 0, 0.06);
+    --autocomplete-selected-text: var(--ink);
+    --autocomplete-info-bg:     #fafafa;
+    --autocomplete-detail-text: var(--body-mid);
+    --autocomplete-match:       #d97706;
+    --autocomplete-detail-selected: rgba(0, 0, 0, 0.45);
+
+    /* editor */
+    --editor-surface: rgba(0, 0, 0, 0.04);
+    --editor-focus-ring: rgba(0, 0, 0, 0.08);
+    --editor-text-tertiary: var(--body-mid);
+
+    /* scrollbar & hover */
+    --scrollbar-thumb: #d4d4d8;
+    --scrollbar-thumb-hover: #a1a1aa;
+    --menu-hover-bg: rgba(0, 0, 0, 0.05);
+    --color-scheme: light;
+}
+
 body, button, select {
     font-family: var(--editor-font-mono);
 }
@@ -83,15 +180,19 @@ body, button, select {
     background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-    background: var(--canvas-mid);
+    background: var(--scrollbar-thumb);
     border: none;
 }
 ::-webkit-scrollbar-thumb:hover {
-    background: #4a4f55;
+    background: var(--scrollbar-thumb-hover);
 }
 * {
     scrollbar-width: thin;
-    scrollbar-color: var(--canvas-mid) transparent;
+    scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+
+html {
+    color-scheme: var(--color-scheme);
 }
 
 html, body {
@@ -273,7 +374,7 @@ main {
     font-family: var(--editor-font-mono);
     line-height: 1.4;
     cursor: pointer;
-    color-scheme: dark;
+    color-scheme: var(--color-scheme);
     -webkit-appearance: none;
     appearance: none;
 }
@@ -294,10 +395,11 @@ main {
     color: var(--body);
 }
 
-/* Run / Reset / Share — same bare text language as the select */
+/* Run / Reset / Share / Theme — same bare text language as the select */
 #run,
 #reset,
-#share-toggle {
+#share-toggle,
+#theme-toggle {
     border: none;
     border-radius: 0;
     padding: 0.2rem 0;
@@ -315,6 +417,8 @@ main {
 #reset:hover,
 #share-toggle:hover,
 #share-toggle:focus-visible,
+#theme-toggle:hover,
+#theme-toggle:focus-visible,
 .share-menu.open #share-toggle {
     color: var(--ink);
     background: transparent;
@@ -367,7 +471,7 @@ main {
 .share-dropdown button:hover,
 .share-dropdown button:focus-visible {
     color: var(--ink);
-    background: rgba(255, 255, 255, 0.06);
+    background: var(--menu-hover-bg);
     outline: none;
 }
 
@@ -737,7 +841,7 @@ body.embed:not(.has-run) #editor-pane {
 }
 
 .cm-tooltip-autocomplete > ul > li[aria-selected] .cm-completionDetail {
-    color: hsla(0, 0%, 100%, 0.4) !important;
+    color: var(--autocomplete-detail-selected) !important;
 }
 
 .cm-completionIcon {

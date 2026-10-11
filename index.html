@@ -7,10 +7,17 @@
     <!-- No stale-HTML recovery here: retired hashed assets survive in the
          server-side attic (deploy.sh) longer than the shell's max-age, so a
          cached shell never references a deleted file. -->
+    <meta name="color-scheme" content="light dark">
     <link rel="stylesheet" href="style/style.css">
-    <!-- Restore split ratio before first paint (avoids jump after module load). -->
+    <!-- Restore theme and split ratio before first paint (avoids flash/jump after module load). -->
     <script>
     (function () {
+      try {
+        var theme = localStorage.getItem("zig-playground-theme");
+        if (theme === "light" || theme === "dark") {
+          document.documentElement.setAttribute("data-theme", theme);
+        }
+      } catch (e) {}
       try {
         // Embed skips split restore: `#embed/…` (new) or `?embed` / `#embed=…` (legacy).
         if (/^#embed(?:\/|=|&|$)/i.test(location.hash)) return;
@@ -51,6 +58,7 @@
                                 <button type="button" role="menuitem" data-share="iframe">iframe</button>
                             </div>
                         </div>
+                        <button type="button" id="theme-toggle" title="Toggle theme (auto / dark / light)" aria-label="Toggle theme">Theme</button>
                         <button type="button" id="reset" title="Reset (Ctrl+R)">Reset</button>
                         <button type="button" id="run">Run</button>
                     </div>
