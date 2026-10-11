@@ -30,6 +30,11 @@ GitHub push
 | sched.xeed.ink | sched-ci | ~/schedmate | main | sched-deploy |
 | zlg.xeed.ink | ziglings-ci | ~/ziglings-web | main | ziglings-deploy |
 
+zig-playground's default remote is the zigcc org (`origin` = zigcc/main,
+`push.default=upstream`); the deploy hook lives on the `xihale` remote, so a
+deploy push is `git push xihale master:master` — a bare `git push` only goes
+to zigcc.
+
 ## Files
 
 Server (canonical; `webhook-deploy`, `webhook.socket`, `webhook.service`,
