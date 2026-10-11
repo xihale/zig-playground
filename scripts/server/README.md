@@ -77,6 +77,15 @@ logic — the only thing the receiver is allowed to run) + this README.
 - deploy.sh concurrency/queueing (flock + rerun), ZP_PUSH_SHA and the
   ntfy message format `[project@gx] deploy success/failure` are unchanged.
 
+## Gotchas
+
+- **No `command-working-directory` in hooks.json entries.** The `<site>-ci`
+  homes are `0700`, so the `webhook` user cannot chdir into them; the spawn
+  then fails silently while GitHub still records a 200 delivery. The runner
+  ignores its cwd and every `deploy.sh` cds into its own clone.
+- Upgrading = swapping the binary at `/usr/local/bin/webhook` (currently
+  2.8.3; check `webhook -version`).
+
 ## Recovery
 
 - Receiver down: `journalctl -u webhook -u webhook.socket`; restart =

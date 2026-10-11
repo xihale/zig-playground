@@ -5,10 +5,9 @@
 //   gen() {  # <user> <project> <deploy.sh> <ref> <hook-id>
 //     local secret=$(cat /home/$1/.webhook-secret)
 //     jq -n --arg id "$5" --arg user "$1" --arg deploy "$3" --arg ref "$4" \
-//        --arg secret "$secret" --arg dir "$(dirname "$3")" '{
+//        --arg secret "$secret" '{
 //       id: $id,
 //       "execute-command": "/usr/bin/sudo",
-//       "command-working-directory": $dir,
 //       "http-methods": ["POST"],
 //       "pass-arguments-to-command": [
 //         {"source":"string","name":"-H"},
@@ -37,11 +36,15 @@
 // AND ref matches the pinned branch. Everything else — ping, other events,
 // other branches, branch deletions — is answered "hook rules were not
 // satisfied" (200) and never reaches deploy.sh.
+//
+// Deliberately NO "command-working-directory": the <site>-ci homes are 0700,
+// so the `webhook` user cannot chdir into them — the spawn then fails
+// silently while GitHub still records a 200. The runner ignores its cwd and
+// each deploy.sh cds into its own clone.
 [
   {
     "id": "zp-deploy",
     "execute-command": "/usr/bin/sudo",
-    "command-working-directory": "/home/zig-ci/zig-playground",
     "http-methods": ["POST"],
     "pass-arguments-to-command": [
       {"source": "string", "name": "-H"},
